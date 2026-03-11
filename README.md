@@ -1,20 +1,66 @@
-# Project Name
-Put here a short paragraph describing your project. 
-Adding an screenshot or a mockup of your application in action would be nice.  
+# Open Match 
+Open Match is a web app that lets individuals/groups post and discover casual sports matches in real time.
+Tech Stack: Next.js, FastAPI, PostgreSQL, Redis, WebSockets.
 
-![This is a screenshot.](images.png)
+![This is a screenshot.](images.png) 
+
 # How to run
-Provide here instructions on how to use your application.   
-- Download the latest binary from the Release section on the right on GitHub.  
-- On the command line uncompress using
+
+## Requirements
+- OS: Windows 10+/macOS/Linux
+- Docker Desktop
+- Python 3.11+
+- Node.js 20+
+
+## Run Locally
+
+### 1. Start Postgres + Redis
+From the repo root:
+```bash 
+docker compose up -d
 ```
-tar -xzf  
+To stop containers
+```bash 
+docker compose down
 ```
-- On the command line run with
+### 2. Run the backend
+```bash
+cd backend
+python -m venv .venv
 ```
-./hello
+
+# Windows:
+```bash
+.venv\Scripts\activate
 ```
-- You will see Hello World! on your terminal. 
+# macOS/Linux:
+```bash
+source .venv/bin/activate
+
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+```
+
+### 3. Run the frontend
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Start pgAdmin: 
+
+Windows: 
+```bash
+docker run -p 5050:80 -e PGADMIN_DEFAULT_EMAIL=admin@example.com -e PGADMIN_DEFAULT_PASSWORD=admin dpage/pgadmin4
+```
+
+check docker using:
+
+```bash
+docker ps
+```
+pgAdmin: http://localhost:5050/login
 
 # How to contribute
 Follow this project board to know the latest status of the project: [http://...]([http://...])  
