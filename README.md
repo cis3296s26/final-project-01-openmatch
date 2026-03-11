@@ -13,7 +13,7 @@ Fields are informational only and cannot be reserved, but availability notes are
 match is accepted, participants are shown the selected field location and can coordinate final
 details using external communication.
 
-![This is a screenshot.](images.png) 
+![This is a screenshot.](POC_Image.png) 
 
 # How to run
 
