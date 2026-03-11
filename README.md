@@ -1,6 +1,17 @@
 # Open Match 
-Open Match is a web app that lets individuals/groups post and discover casual sports matches in real time.
-Tech Stack: Next.js, FastAPI, PostgreSQL, Redis, WebSockets.
+
+Open Match is a web application made to allow casual players, friend groups, and
+informal teams to find other nearby players or groups for recreational sports matches. The
+platform functions as a live availability board where users signal that they are ready to play and
+find others looking for a match at the same time. Users can create a profile as an individual or as part of a group, select a sport, skill level,
+preferred team size, and general location, and toggle their current availability status being either
+Ready, Away, or Offline. When marked as Ready, users/groups can post a short-lived match
+request describing the game they want to play based on a fixed selection. This can range from a
+casual soccer match to a competitive basketball game. Other nearby users/groups can view and
+request to accept these requests. Open Match also displays nearby sports fields depending on game selection chosen.
+Fields are informational only and cannot be reserved, but availability notes are provided. Once a
+match is accepted, participants are shown the selected field location and can coordinate final
+details using external communication.
 
 ![This is a screenshot.](images.png) 
 
@@ -63,7 +74,7 @@ docker ps
 pgAdmin: http://localhost:5050/login
 
 # How to contribute
-Follow this project board to know the latest status of the project: [http://...]([http://...])  
+Follow this project board to know the latest status of the project: [https://github.com/orgs/cis3296s26/projects/28](https://github.com/orgs/cis3296s26/projects/28)  
 
 ### How to build
 - Use this github repository: ... 
