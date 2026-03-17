@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type Team = {
@@ -111,7 +112,15 @@ export default function Home() {
   return (
     <main className="min-h-screen p-8 max-w-5xl mx-auto space-y-10">
       <header className="space-y-2">
-        <h1 className="text-3xl font-bold">Open Match</h1>
+                <div className="flex items-center justify-between gap-4">
+          <h1 className="text-3xl font-bold">Open Match</h1>
+          <Link
+            href="/login"
+            className="rounded-lg border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 shadow-sm transition hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+          >
+            Login
+          </Link>
+        </div>
         <p className="text-gray-600">
           Real-time availability board + match posts + map links.
         </p>
