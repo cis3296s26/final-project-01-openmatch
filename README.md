@@ -77,7 +77,7 @@ pgAdmin: http://localhost:5050/login
 Follow this project board to know the latest status of the project: [https://github.com/orgs/cis3296s26/projects/28](https://github.com/orgs/cis3296s26/projects/28)  
 
 ### How to build
-- Use this github repository: ... 
+- Use this github repository: https://github.com/cis3296s26/final-project-01-openmatch.git
 - Specify what branch to use for a more stable release or for cutting edge development.  
 - Use InteliJ 11
 - Specify additional library to download if needed 
