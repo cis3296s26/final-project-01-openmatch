@@ -7,7 +7,10 @@ services:
     dockerContext: .
     plan: free
     autoDeployTrigger: commit
+    healthCheckPath: /health
     envVars:
+      - key: APP_ENV
+        value: prod
       - key: DATABASE_URL
         fromDatabase:
           name: openmatch-db
@@ -29,11 +32,14 @@ services:
     envVars:
       - key: NEXT_PUBLIC_API_BASE_URL
         value: https://openmatch-backend.onrender.com
+      - key: NEXT_PUBLIC_WS_BASE_URL
+        value: wss://openmatch-backend.onrender.com
+
+  - type: keyvalue
+    name: openmatch-redis
+    plan: free
+    ipAllowList: []
 
 databases:
   - name: openmatch-db
-    plan: free
-
-keyvalue:
-  - name: openmatch-redis
     plan: free
