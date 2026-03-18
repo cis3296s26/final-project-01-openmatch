@@ -22,7 +22,8 @@ type Post = {
   created_at: string;
 };
 
-const API = "http://localhost:8000";
+const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
+const WS = process.env.NEXT_PUBLIC_WS_BASE_URL!;
 
 export default function Home() {
   const [teams, setTeams] = useState<Team[]>([]);
@@ -48,7 +49,7 @@ export default function Home() {
   useEffect(() => {
     refresh();
 
-    const ws = new WebSocket("ws://localhost:8000/ws");
+    const ws = new WebSocket(`${WS}/ws`);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -185,7 +186,7 @@ export default function Home() {
                 <div className="font-semibold">{p.team_name} ({p.skill}) • {p.sport} • {p.city}</div>
                 <div className="text-sm text-gray-600">{p.note ?? ""}</div>
               </div>
-              <a className="underline text-sm" href={mapsLink(p.city)} target="_blank">
+              <a className="underline text-sm" href={mapsLink(p.city)} target="_blank" rel="noreferrer">
                 Find fields near {p.city}
               </a>
             </div>

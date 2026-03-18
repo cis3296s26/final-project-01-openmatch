@@ -1,0 +1,45 @@
+services:
+  - type: web
+    name: openmatch-backend
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    autoDeployTrigger: commit
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: prod
+      - key: DATABASE_URL
+        fromDatabase:
+          name: openmatch-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: openmatch-redis
+          property: connectionString
+
+  - type: web
+    name: openmatch-frontend
+    runtime: docker
+    rootDir: frontend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    autoDeployTrigger: commit
+    envVars:
+      - key: NEXT_PUBLIC_API_BASE_URL
+        value: https://openmatch-backend.onrender.com
+      - key: NEXT_PUBLIC_WS_BASE_URL
+        value: wss://openmatch-backend.onrender.com
+
+  - type: keyvalue
+    name: openmatch-redis
+    plan: free
+    ipAllowList: []
+
+databases:
+  - name: openmatch-db
+    plan: free
