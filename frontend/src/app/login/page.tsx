@@ -44,9 +44,9 @@ export default function LoginPage() {
 
                     {/* Create Account Button */}
                     <div className="flex justify-center mb-4">
-                        <button className="w-1/2 border rounded-md px-3 py-2 hover:underline">
+                        <Link href="/login/register" className="w-1/2 border rounded-md px-3 py-2 text-center hover:underline flex justify-center items-center">
                             Create New Account
-                        </button>
+                        </Link>
                     </div>
 
                 </section>
