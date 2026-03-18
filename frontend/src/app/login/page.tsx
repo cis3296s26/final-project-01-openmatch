@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { type } from '../../../.next/dev/types/routes';
 
 export default function LoginPage() {
     return (
