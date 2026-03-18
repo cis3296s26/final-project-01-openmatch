@@ -73,6 +73,44 @@ docker ps
 ```
 pgAdmin: http://localhost:5050/login
 
+Email: admin@example.com
+Password: admin
+
+# Deployment using Render
+
+Services:
+
+Frontend: Next.js container
+Backend: FastAPI contaier
+Database: Render managed PostgreSQL
+Cache: Render managed Redis
+
+Configure in render.yaml
+
+Go to Renders website and link the repo, then select the render.yaml to build.
+
+
+# Access deployed database using Render
+
+In pgAdmin, right click Servers => Register => Server
+
+Go your render database and copy the external connection details and paste into pgAdmin:
+
+Host (ending with .(originhost).render.com)
+Port
+Database
+Username
+Password
+
+SSL Mode: require
+
+Finally click save.
+
+# Live Web-app
+
+https://openmatch-frontend.onrender.com
+https://openmatch-backend.onrender.com/health
+
 # How to contribute
 Follow this project board to know the latest status of the project: [https://github.com/orgs/cis3296s26/projects/28](https://github.com/orgs/cis3296s26/projects/28)  
 
