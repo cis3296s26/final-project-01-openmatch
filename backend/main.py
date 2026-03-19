@@ -10,6 +10,9 @@ from sqlalchemy import create_engine, text
 
 from typing import List, Optional
 from pydantic import BaseModel, EmailStr, Field
+from passlib.context import CryptContext
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 APP_ENV = os.getenv("APP_ENV", "dev")
 
@@ -80,6 +83,10 @@ class ProfileCreate(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=50)
     bio: Optional[str] = Field(default=None, max_length=1000)
     location: Optional[str] = Field(default=None, max_length=100)
+
+class UserLogin(BaseModel):
+    login: str = Field(..., min_length=1, max_length=100)  # can be email or username
+    password: str = Field(..., min_length=8, max_length=128)
 
 def init_db() -> None:
     with engine.begin() as conn:
@@ -181,7 +188,7 @@ def create_user(payload: UserCreate):
                 "last_name": payload.last_name,
                 "email": payload.email,
                 "username": payload.username,
-                "password_hash": payload.password,
+                "password_hash": pwd_context.hash(payload.password),
             },
         ).mappings().one()
 
@@ -256,6 +263,31 @@ def get_user_profile(user_id: int):
     if not row:
             return {"error": "Profile not found"}
     return dict(row)
+
+@app.post("/login")
+def login(payload: UserLogin):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT id, email, username, password_hash
+                FROM users
+                WHERE email = :login OR username = :login
+                """
+            ),
+            {"login": payload.login}
+            ).mappings().first()
+        if not row:
+            return {"error": "Invalid credentials"}
+        
+        if not pwd_context.verify(payload.password, row["password_hash"]):
+            return {"error": "Invalid credentials"}
+        
+        return {
+            "id": row["id"],
+            "email": row["email"],
+            "username": row["username"]
+        }
 
 @app.post("/teams")
 async def create_team(payload: dict):
