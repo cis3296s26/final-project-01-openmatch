@@ -49,10 +49,21 @@ python -m venv .venv
 # macOS/Linux:
 ```bash
 source .venv/bin/activate
+```
 
+### Install requirements and run backend
+```bash
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
+
+##### Check the docs at:
+
+http://localhost:8000/docs#/
+
+Or
+
+http://localhost:8000/redoc
 
 ### 3. Run the frontend
 ```bash
@@ -118,6 +129,7 @@ Finally click save.
 # Live Web-app
 
 https://openmatch-frontend.onrender.com
+
 https://openmatch-backend.onrender.com/health
 
 # How to contribute
