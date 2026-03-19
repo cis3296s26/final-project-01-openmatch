@@ -8,6 +8,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, text
 
+from typing import List, Optional
+from pydantic import BaseModel, EmailStr, Field
+
 APP_ENV = os.getenv("APP_ENV", "dev")
 
 DATABASE_URL = os.getenv(
@@ -64,6 +67,19 @@ manager = ConnectionManager()
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
+class UserCreate(BaseModel):
+    first_name: str = Field(..., min_length=1, max_length=50) 
+    last_name: str = Field(..., min_length=1, max_length=50) 
+    email: EmailStr
+    username: str = Field(..., min_length=1, max_length=40) 
+    password: str = Field(..., min_length=8, max_length=128) 
+
+
+class ProfileCreate(BaseModel):
+    user_id: int
+    display_name: str = Field(..., min_length=1, max_length=50)
+    bio: Optional[str] = Field(default=None, max_length=1000)
+    location: Optional[str] = Field(default=None, max_length=100)
 
 def init_db() -> None:
     with engine.begin() as conn:
@@ -72,15 +88,20 @@ def init_db() -> None:
                 """
                 CREATE TABLE IF NOT EXISTS users (
                     id SERIAL PRIMARY KEY,
+                    first_name TEXT NOT NULL,
+                    last_name TEXT NOT NULL,
                     email TEXT UNIQUE NOT NULL,
+                    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+                    username TEXT NOT NULL UNIQUE,
                     password_hash TEXT NOT NULL,
-                    created_at TIMESTAMPTZ DEFAULT NOW()
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
 
                 CREATE TABLE IF NOT EXISTS profiles (
                     id SERIAL PRIMARY KEY,
                     user_id INT UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-                    username TEXT NOT NULL UNIQUE,
                     display_name TEXT NOT NULL,
                     bio TEXT,
                     location TEXT,
@@ -144,6 +165,97 @@ def health():
     r.ping()
     return {"status": "ok", "time": now_iso()}
 
+@app.post("/users")
+def create_user(payload: UserCreate):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                INSERT INTO users (first_name, last_name, email, username, password_hash)
+                VALUES (:first_name, :last_name, :email, :username, :password_hash)
+                RETURNING id, first_name, last_name, email, username, created_at
+                """
+            ),
+            {
+                "first_name": payload.first_name,
+                "last_name": payload.last_name,
+                "email": payload.email,
+                "username": payload.username,
+                "password_hash": payload.password,
+            },
+        ).mappings().one()
+
+    return dict(row)
+
+@app.get("/users/{user_id}")
+def get_user(user_id: int):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT id, first_name, last_name, email, username, created_at
+                FROM users
+                WHERE id = :user_id
+                """
+            ),
+            {"user_id": user_id}
+        ).mappings().first()
+    if not row:
+        return {"error": "User not found"}
+    return dict(row)
+
+@app.post("/profiles")
+def create_profile(payload: ProfileCreate):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                INSERT INTO profiles (user_id, display_name, bio, location)
+                VALUES (:user_id, :display_name, :bio, :location)
+                RETURNING id, user_id, display_name, bio, location, created_at, updated_at
+                """
+            ),
+            {
+                "user_id": payload.user_id,
+                "display_name": payload.display_name,
+                "bio": payload.bio,
+                "location": payload.location,
+            }
+        ).mappings().one()
+    return dict(row)
+
+@app.get("/profiles/{profile_id}")
+def get_profile(profile_id: int):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT id, user_id, display_name, bio, location, created_at, updated_at
+                FROM profiles
+                WHERE id = :profile_id"""
+            ),
+            {"profile_id": profile_id}
+        ).mappings().first()
+
+    if not row:
+        return {"error": "Profile not found"}
+    return dict(row)
+
+@app.get("/users/{user_id}/profile")
+def get_user_profile(user_id: int):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT id, user_id, display_name, bio, location, created_at, updated_at
+                FROM profiles
+                WHERE user_id = :user_id"""
+            ),
+            {"user_id": user_id}
+        ).mappings().first()
+    if not row:
+            return {"error": "Profile not found"}
+    return dict(row)
 
 @app.post("/teams")
 async def create_team(payload: dict):
