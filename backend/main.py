@@ -70,11 +70,36 @@ def init_db() -> None:
         conn.execute(
             text(
                 """
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS profiles (
+                    id SERIAL PRIMARY KEY,
+                    user_id INT UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+                    username TEXT NOT NULL UNIQUE,
+                    display_name TEXT NOT NULL,
+                    bio TEXT,
+                    location TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS sports (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
                 CREATE TABLE IF NOT EXISTS teams (
-                  id SERIAL PRIMARY KEY,
-                  name TEXT NOT NULL,
-                  sport TEXT NOT NULL,
-                  city TEXT NOT NULL
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    sport TEXT NOT NULL,
+                    city TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS match_posts (
@@ -83,6 +108,24 @@ def init_db() -> None:
                   skill TEXT NOT NULL,
                   note TEXT,
                   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS profile_sports (
+                    id SERIAL PRIMARY KEY,
+                    profile_id INT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    sport_id INT NOT NULL REFERENCES sports(id) ON DELETE CASCADE,
+
+                    mmr INT NOT NULL DEFAULT 1000,
+                    matches_played INT NOT NULL DEFAULT 0,
+                    wins INT NOT NULL DEFAULT 0,
+                    losses INT NOT NULL DEFAULT 0,
+                    placement_matches_remaining INT NOT NULL DEFAULT 5,
+                    rank_tier TEXT NOT NULL DEFAULT 'Unranked',
+
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+                    UNIQUE(profile_id, sport_id)
                 );
                 """
             )
@@ -183,6 +226,7 @@ def list_posts():
         if r.get(f"post:{row['id']}:active") == "1":
             posts.append(dict(row))
     return posts
+
 
 
 @app.websocket("/ws")

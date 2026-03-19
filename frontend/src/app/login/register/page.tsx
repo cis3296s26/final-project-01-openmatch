@@ -1,10 +1,23 @@
 import Link from "next/link";
 
+type User ={
+    id: number;
+    display_name: string;
+    email: string;
+    username: string;
+    password: string;
+    sports: string[];
+    location: string;
+    skill_level: string;
+    bio: string;
+    created_at: string;
+    updated_at: string;
+}
+
 export default function RegisterPage() {
     return (
 <main className="min-h-screen max-w-5xl mx-auto p-8 space-y-10">
 
-            {/* Login Interface */}
             <div className="flex items-center justify-center">
                 {/* Border around login interface */}
                 <section className="mx-auto w-5/6 min-w-xs rounded-lg border p-40 space-y-3">
