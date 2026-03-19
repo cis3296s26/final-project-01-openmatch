@@ -22,6 +22,8 @@ details using external communication.
 - Docker Desktop
 - Python 3.11+
 - Node.js 20+
+- Configure/Create .env files
+- Configure/Create servers.json
 
 ## Run Locally
 
@@ -61,10 +63,13 @@ npm run dev
 
 Start pgAdmin: 
 
+For running pgAdmin without information in servers.json and docker-compose.yaml:
+
 Windows: 
 ```bash
 docker run -p 5050:80 -e PGADMIN_DEFAULT_EMAIL=admin@example.com -e PGADMIN_DEFAULT_PASSWORD=admin dpage/pgadmin4
 ```
+Otherwise, docker-compose.yaml contains all neccessary information to automatically start and configure a local/production database.
 
 check docker using:
 
@@ -73,8 +78,11 @@ docker ps
 ```
 pgAdmin: http://localhost:5050/login
 
-Email: admin@example.com
-Password: admin
+Email: ``` admin@example.com ```
+
+Password: ``` admin ```
+
+Local Database Passowrd: ``` openmatch ```
 
 # Deployment using Render
 
@@ -92,6 +100,7 @@ Go to Renders website and link the repo, then select the render.yaml to build.
 
 # Access deployed database using Render
 
+### **This section applies only if servers.json was not created**
 In pgAdmin, right click Servers => Register => Server
 
 Go your render database and copy the external connection details and paste into pgAdmin:
@@ -114,10 +123,10 @@ https://openmatch-backend.onrender.com/health
 # How to contribute
 Follow this project board to know the latest status of the project: [https://github.com/orgs/cis3296s26/projects/28](https://github.com/orgs/cis3296s26/projects/28)  
 
-### How to build
+<!-- ### How to build
 - Use this github repository: https://github.com/cis3296s26/final-project-01-openmatch.git
 - Specify what branch to use for a more stable release or for cutting edge development.  
 - Use InteliJ 11
 - Specify additional library to download if needed 
 - What file and target to compile and run. 
-- What is expected to happen when the app start. 
+- What is expected to happen when the app start.  -->

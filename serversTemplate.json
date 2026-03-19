@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Local DB",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "openmatch",
+      "Username": "openmatch",
+      "SSLMode": "disable"
+    }
+  }
+}
