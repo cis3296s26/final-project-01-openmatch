@@ -1,6 +1,61 @@
+"use client"
+
+import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useState } from "react";
+import toast from "react-hot-toast";
+
+const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
+
+type LoginInput = {
+    login: string;
+    password: string;
+};
 
 export default function LoginPage() {
+    const router = useRouter();
+
+    const [formData, setFormData] = useState<LoginInput>({
+        login: "",
+        password: "",
+    });
+
+    const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
+        e.preventDefault();
+
+        try{
+            await loginUser(formData)
+            toast.success("Logged in successfully");
+            router.push("/");
+        }
+        catch (err) {
+            console.error(err);
+            toast.error(err instanceof Error ? err.message : "Failed to Login")
+        }
+    }
+
+    async function loginUser(data: LoginInput) {
+        const res = await fetch(`${API}/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json"},
+            body: JSON.stringify(data),
+        });
+
+        if(!res.ok){
+            throw new Error("Failed to login");
+        }
+
+        const user = await res.json();
+        return user;
+    }
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setFormData({
+            ...formData,
+            [e.target.name]: e.target.value,
+        });
+    };
+
     return (
         <main className="min-h-screen max-w-5xl mx-auto p-8 space-y-10">
 
@@ -14,30 +69,35 @@ export default function LoginPage() {
                     </header>
 
                     {/* Username and Password fields */}
-                    <div className="mb-4">
-                        <label className="text-xl font-medium mb-2">Username</label>
-                        <input className="w-full bg-gray border rounded-md px-3 py-1"
-                            type = "email"
-                            placeholder="Username"
-                        ></input>
-                    </div>
-                    <div className="mb-4">
-                        <label className="text-xl font-medium mb-2">Password</label>
-                        <input className="w-full bg-gray border rounded-md px-3 py-1"
-                            type = "password"
-                            placeholder="********"
-                        ></input>
-                        <a className="text-l text-blue-400 decoration-white hover:underline"
-                            href="FORGOT_PASSWORD_LINK_PLACEHOLDER"
-                        >Forgot Password?</a>
-                    </div>
-
-                    {/* Sign in Button */}
-                    <div className="flex justify-center mb-8">
-                        <button className="w-1/2 border rounded-md px-3 py-2 hover:underline">
-                            Sign in
-                        </button>
-                    </div>
+                    <form onSubmit={handleSubmit}>
+                        <div className="mb-4">
+                            <label className="text-xl font-medium mb-2">Username or Email</label>
+                            <input className="w-full bg-gray border rounded-md px-3 py-1"
+                                type = "text"
+                                name = "login"
+                                value = {formData.login} onChange={handleChange}
+                                placeholder="Username or Email"
+                            ></input>
+                        </div>
+                        <div className="mb-4">
+                            <label className="text-xl font-medium mb-2">Password</label>
+                            <input className="w-full bg-gray border rounded-md px-3 py-1"
+                                type = "password"
+                                name = "password"
+                                value = {formData.password} onChange={handleChange}
+                                placeholder="********"
+                            ></input>
+                            <a className="text-l text-blue-400 decoration-white hover:underline"
+                                href="FORGOT_PASSWORD_LINK_PLACEHOLDER"
+                            >Forgot Password?</a>
+                        </div>
+                        {/* Sign in Button */}
+                        <div className="flex justify-center mb-8">
+                            <button type="submit" className="w-1/2 border rounded-md px-3 py-2 cursor-pointer hover:underline">
+                                Sign in
+                            </button>
+                        </div>
+                    </form>
 
                     {/* Divider */}
                     <div className="flex-1 h-px bg-white mb-8"></div>
