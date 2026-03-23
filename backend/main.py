@@ -7,9 +7,10 @@ import redis
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 
 from typing import List, Optional
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, field_validator, Field
 from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -75,7 +76,12 @@ class UserCreate(BaseModel):
     last_name: str = Field(..., min_length=1, max_length=50) 
     email: EmailStr
     username: str = Field(..., min_length=1, max_length=40) 
-    password: str = Field(..., min_length=8, max_length=128) 
+    password: str = Field(..., min_length=8)
+
+    @field_validator('email', 'username')
+    @classmethod
+    def to_lowercase(cls, v: str) -> str:
+        return v.lower()
 
 
 class ProfileCreate(BaseModel):
@@ -86,7 +92,7 @@ class ProfileCreate(BaseModel):
 
 class UserLogin(BaseModel):
     login: str = Field(..., min_length=1, max_length=100)  # can be email or username
-    password: str = Field(..., min_length=8, max_length=128)
+    password: str = Field(..., min_length=8)
 
 def init_db() -> None:
     with engine.begin() as conn:
@@ -174,25 +180,28 @@ def health():
 
 @app.post("/users", status_code=201)
 def create_user(payload: UserCreate):
-    with engine.begin() as conn:
-        row = conn.execute(
-            text(
-                """
-                INSERT INTO users (first_name, last_name, email, username, password_hash)
-                VALUES (:first_name, :last_name, :email, :username, :password_hash)
-                RETURNING id, first_name, last_name, email, username, created_at
-                """
-            ),
-            {
-                "first_name": payload.first_name,
-                "last_name": payload.last_name,
-                "email": payload.email,
-                "username": payload.username,
-                "password_hash": pwd_context.hash(payload.password),
-            },
-        ).mappings().one()
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    INSERT INTO users (first_name, last_name, email, username, password_hash)
+                    VALUES (:first_name, :last_name, :email, :username, :password_hash)
+                    RETURNING id, first_name, last_name, email, username, created_at
+                    """
+                ),
+                {
+                    "first_name": payload.first_name,
+                    "last_name": payload.last_name,
+                    "email": payload.email,
+                    "username": payload.username,
+                    "password_hash": pwd_context.hash(payload.password),
+                },
+            ).mappings().one()
 
-    return dict(row)
+        return dict(row)
+    except IntegrityError:
+        raise HTTPException(status_code=400, detail="Email or username already exists")
 
 @app.get("/users/{user_id}")
 def get_user(user_id: int):
