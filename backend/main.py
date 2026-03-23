@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import List
 
 import redis
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, text
 
@@ -172,7 +172,7 @@ def health():
     r.ping()
     return {"status": "ok", "time": now_iso()}
 
-@app.post("/users")
+@app.post("/users", status_code=201)
 def create_user(payload: UserCreate):
     with engine.begin() as conn:
         row = conn.execute(
@@ -208,10 +208,10 @@ def get_user(user_id: int):
             {"user_id": user_id}
         ).mappings().first()
     if not row:
-        return {"error": "User not found"}
+        raise HTTPException(status_code=404, detail="User not found")
     return dict(row)
 
-@app.post("/profiles")
+@app.post("/profiles", status_code=201)
 def create_profile(payload: ProfileCreate):
     with engine.begin() as conn:
         row = conn.execute(
@@ -245,7 +245,7 @@ def get_profile(profile_id: int):
         ).mappings().first()
 
     if not row:
-        return {"error": "Profile not found"}
+        raise HTTPException(status_code=404, detail="Profile not found")
     return dict(row)
 
 @app.get("/users/{user_id}/profile")
@@ -261,7 +261,7 @@ def get_user_profile(user_id: int):
             {"user_id": user_id}
         ).mappings().first()
     if not row:
-            return {"error": "Profile not found"}
+        raise HTTPException(status_code=404, detail="Profile not found")
     return dict(row)
 
 @app.post("/login")
