@@ -65,6 +65,13 @@ Or
 
 http://localhost:8000/redoc
 
+##### =-=-= Testing: pytest =-=-=
+
+In .\backend\, run:
+```bash
+pytest
+```
+
 ### 3. Run the frontend
 ```bash
 cd frontend
