@@ -13,7 +13,6 @@ from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from pydantic import BaseModel, EmailStr, field_validator, Field
 from passlib.context import CryptContext
-from dotenv import load_dotenv
 import secrets
 import hashlib
 
@@ -22,7 +21,6 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-load_dotenv()
 
 APP_ENV = os.getenv("APP_ENV", "dev")
 
