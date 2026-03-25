@@ -18,7 +18,7 @@ services:
       - key: MAIL_PASSWORD
         sync: false
       - key: SECRET_KEY
-          generateValue: true
+        generateValue: true
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: 1440
       - key: DATABASE_URL
