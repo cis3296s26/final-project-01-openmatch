@@ -33,7 +33,7 @@ function VerificationContent() {
 
                 setStatus("success");
                 setMessage("Verification successful! Redirecting to login...");
-                // setTimeout(() => router.push("/login"), 2000);
+                setTimeout(() => router.push("/login"), 2000);
             } catch {
                 setStatus("error");
                 setMessage("Uh oh! Something went wrong!");
