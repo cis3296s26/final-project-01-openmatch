@@ -25,6 +25,36 @@ details using external communication.
 - Configure/Create .env files
 - Configure/Create servers.json
 
+## Configure Environment Files
+When working locally, you have to set up the .env files for both the backend and frontend manually.
+The backend\\.env.example file describes what should be contained in each of these files.
+
+frontend\\.env.local - contains the localhost port where the backend is being hosted, 8000 by default
+```
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+NEXT_PUBLIC_WS_BASE_URL=http://localhost:8000
+```
+
+backend\\.env.local - contains default ports for the database, redis, and frontend. However, the user must configure the secret key, email, and password.
+```
+APP_ENV=dev
+DATABASE_URL=postgresql+psycopg2://openmatch:openmatch@localhost:5432/openmatch
+REDIS_URL=redis://localhost:6379/0
+FRONTEND_URL=http://localhost:3000
+SECRET_KEY=SECRET_KEY_GOES_HERE
+MAIL_USERNAME=EMAIL_USERNAME_GOES_HERE
+MAIL_PASSWORD=EMAIL_PASSWORD_GOES_HERE
+```
+The backend requires a SECRET_KEY environment variable for JWT authentication. Generate one with:
+```bash
+openssl rand -hex 32
+or 
+```
+```bash
+python -c "import secrets; print(secrets.token_hex(32))" 
+```
+The backend also requires an email address and password from which verification emails for openmatch are sent. If done with gmail, the password must be a 16 character app password.
+
 ## Run Locally
 
 ### 1. Start Postgres + Redis
