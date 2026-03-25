@@ -40,7 +40,7 @@ DATABASE_URL = os.getenv(
     "postgresql+psycopg2://openmatch:openmatch@localhost:5432/openmatch",
 )
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+FRONTEND_URL = os.getenv("https://openmatch-frontend.onrender.com")
 
 MAIL_SENDER = os.getenv("MAIL_USERNAME")
 MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
