@@ -1,12 +1,40 @@
 import os
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List
 
+from dotenv import load_dotenv
 import redis
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
+from dotenv import load_dotenv
+
+from typing import List, Optional
+from pydantic import BaseModel, EmailStr, field_validator, Field
+from passlib.context import CryptContext
+import secrets
+import hashlib
+
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from jose import jwt, JWTError
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+# Load environment variables from .env file
+load_dotenv()
+load_dotenv(".env.local")
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# JWT Configuration
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY environment variable is not set")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 
 APP_ENV = os.getenv("APP_ENV", "dev")
 
@@ -15,6 +43,10 @@ DATABASE_URL = os.getenv(
     "postgresql+psycopg2://openmatch:openmatch@localhost:5432/openmatch",
 )
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+FRONTEND_URL = os.getenv("FRONTEND_URL")
+
+MAIL_SENDER = os.getenv("MAIL_USERNAME")
+MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
@@ -31,6 +63,52 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+def send_email(to: str, subject: str, body: str):
+    sender = MAIL_SENDER
+    password = MAIL_PASSWORD
+
+    msg = MIMEMultipart()
+    msg["From"] = sender
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "html"))
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(sender, password)
+        server.sendmail(sender, to, msg.as_string())
+# Security scheme for protected routes
+security = HTTPBearer()
+# ============== JWT UTILITIES ==============
+def create_access_token(data: dict) -> str:
+    """
+    Create a JWT token with the given payload.
+    The token includes 'sub' (subject/user_id) and 'exp' (expiration).
+    """
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+def verify_token(token: str) -> dict | None:
+    """
+    Verify and decode a JWT token.
+    Returns the payload if valid, None if invalid/expired.
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except JWTError:
+        return None
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    """
+    Dependency that extracts and validates the JWT from the Authorization header.
+    Use this to protect routes that require authentication.
+    """
+    token = credentials.credentials
+    payload = verify_token(token)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return payload
 
 
 # Simple websocket manager
@@ -64,17 +142,80 @@ manager = ConnectionManager()
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
+class UserCreate(BaseModel):
+    first_name: str = Field(..., min_length=1, max_length=50) 
+    last_name: str = Field(..., min_length=1, max_length=50) 
+    email: EmailStr
+    username: str = Field(..., min_length=1, max_length=40) 
+    password: str = Field(..., min_length=8)
+
+    @field_validator('email', 'username')
+    @classmethod
+    def to_lowercase(cls, v: str) -> str:
+        return v.lower()
+
+
+class ProfileCreate(BaseModel):
+    display_name: str = Field(..., min_length=1, max_length=50)
+    bio: Optional[str] = Field(default=None, max_length=1000)
+    location: Optional[str] = Field(default=None, max_length=100)
+
+class UserLogin(BaseModel):
+    login: str = Field(..., min_length=1, max_length=100)  # can be email or username
+    password: str = Field(..., min_length=8)
 
 def init_db() -> None:
     with engine.begin() as conn:
         conn.execute(
             text(
                 """
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    first_name TEXT NOT NULL,
+                    last_name TEXT NOT NULL,
+                    email TEXT UNIQUE NOT NULL,
+                    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS email_verification_tokens (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    expires_at TIMESTAMPTZ NOT NULL,
+                    used_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_token_hash
+                    ON email_verification_tokens(token_hash);
+
+                CREATE TABLE IF NOT EXISTS profiles (
+                    id SERIAL PRIMARY KEY,
+                    user_id INT UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+                    display_name TEXT NOT NULL,
+                    bio TEXT,
+                    location TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS sports (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
                 CREATE TABLE IF NOT EXISTS teams (
-                  id SERIAL PRIMARY KEY,
-                  name TEXT NOT NULL,
-                  sport TEXT NOT NULL,
-                  city TEXT NOT NULL
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    sport TEXT NOT NULL,
+                    city TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS match_posts (
@@ -83,6 +224,24 @@ def init_db() -> None:
                   skill TEXT NOT NULL,
                   note TEXT,
                   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS profile_sports (
+                    id SERIAL PRIMARY KEY,
+                    profile_id INT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    sport_id INT NOT NULL REFERENCES sports(id) ON DELETE CASCADE,
+
+                    mmr INT NOT NULL DEFAULT 1000,
+                    matches_played INT NOT NULL DEFAULT 0,
+                    wins INT NOT NULL DEFAULT 0,
+                    losses INT NOT NULL DEFAULT 0,
+                    placement_matches_remaining INT NOT NULL DEFAULT 5,
+                    rank_tier TEXT NOT NULL DEFAULT 'Unranked',
+
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+                    UNIQUE(profile_id, sport_id)
                 );
                 """
             )
@@ -101,6 +260,233 @@ def health():
     r.ping()
     return {"status": "ok", "time": now_iso()}
 
+@app.post("/users", status_code=201)
+def create_user(payload: UserCreate):
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    INSERT INTO users (first_name, last_name, email, username, password_hash, email_verified)
+                    VALUES (:first_name, :last_name, :email, :username, :password_hash, FALSE)
+                    RETURNING id, first_name, last_name, email, username, created_at
+                    """
+                ),
+                {
+                    "first_name": payload.first_name,
+                    "last_name": payload.last_name,
+                    "email": payload.email,
+                    "username": payload.username,
+                    "password_hash": pwd_context.hash(payload.password),
+                },
+            ).mappings().one()
+
+#             Creation of the token and inserting it into table
+            plaintext_token = secrets.token_urlsafe(32)
+            hashed_token = hashlib.sha256(plaintext_token.encode()).hexdigest()
+            verify_url = f"{FRONTEND_URL}/login/verify?token={plaintext_token}"
+
+            print(verify_url)
+
+            send_email(
+                to=row["email"],
+                subject="Openmatch Email Verification",
+                body=verify_url
+            )
+
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
+                    VALUES (:user_id, :token_hash, :expires_at)
+                    """
+                ),
+                {
+                    "user_id": row["id"],
+                    "token_hash": hashed_token,
+                    "expires_at": datetime.now(timezone.utc) + timedelta(hours=24),
+                },
+            )
+
+        return dict(row)
+    except IntegrityError:
+        raise HTTPException(status_code=400, detail="Email or username already exists")
+
+@app.get("/verify")
+def verify_email(token: str):
+    try:
+        with engine.begin() as conn:
+            # Hash plain text token from email
+            hashed_token = hashlib.sha256(token.encode()).hexdigest()
+
+            # Grab the stuff from the table
+            row = conn.execute(
+                text(
+                    """
+                    SELECT id, user_id, expires_at, used_at
+                    FROM email_verification_tokens
+                    WHERE token_hash = :desired_token_hash
+                    """
+                ),
+                {
+                    "desired_token_hash": hashed_token
+                }
+            ).mappings().one()
+
+            # Check if that matches
+            if not row:
+                raise HTTPException(status_code=400, detail="Invalid token")
+            if row["used_at"] is not None:
+                raise HTTPException(status_code=400, detail="Token already used")
+            if row["expires_at"] < datetime.now(timezone.utc):
+                raise HTTPException(status_code=400, detail="Token expired")
+
+            conn.execute(
+                text(
+                    """
+                    UPDATE users SET email_verified = TRUE WHERE id = :user_id
+                    """
+                ),
+                {
+                    "user_id": row["user_id"],
+                }
+            )
+
+            conn.execute(
+                text(
+                    """
+                    UPDATE email_verification_tokens SET used_at = :used_at WHERE id = :id
+                    """
+                ),
+                {
+                    "used_at": datetime.now(timezone.utc),
+                    "id": row["id"],
+                }
+            )
+    except IntegrityError:
+        raise HTTPException(status_code=400, detail="Email or username already exists")
+
+
+
+@app.get("/users/{user_id}")
+def get_user(user_id: int):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT id, first_name, last_name, email, username, created_at
+                FROM users
+                WHERE id = :user_id
+                """
+            ),
+            {"user_id": user_id}
+        ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    return dict(row)
+
+@app.post("/profiles", status_code=201)
+def create_profile(payload: ProfileCreate, current_user: dict = Depends(get_current_user)):
+    """Protected: Creates or updates a profile for the authenticated user."""
+    user_id = int(current_user["sub"])
+    
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    INSERT INTO profiles (user_id, display_name, bio, location)
+                    VALUES (:user_id, :display_name, :bio, :location)
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        display_name = :display_name,
+                        bio = :bio,
+                        location = :location,
+                        updated_at = NOW()
+                    RETURNING id, user_id, display_name, bio, location, created_at, updated_at
+                    """
+                ),
+                {
+                    "user_id": user_id,
+                    "display_name": payload.display_name,
+                    "bio": payload.bio,
+                    "location": payload.location,
+                }
+            ).mappings().one()
+        return dict(row)
+    except IntegrityError:
+        raise HTTPException(status_code=400, detail="Failed to create profile")
+
+@app.get("/profiles/{profile_id}")
+def get_profile(profile_id: int):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT id, user_id, display_name, bio, location, created_at, updated_at
+                FROM profiles
+                WHERE id = :profile_id"""
+            ),
+            {"profile_id": profile_id}
+        ).mappings().first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return dict(row)
+
+@app.get("/users/{user_id}/profile")
+def get_user_profile(user_id: int):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT id, user_id, display_name, bio, location, created_at, updated_at
+                FROM profiles
+                WHERE user_id = :user_id"""
+            ),
+            {"user_id": user_id}
+        ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return dict(row)
+
+@app.post("/login")
+def login(payload: UserLogin):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT id, first_name, last_name, email, username, password_hash
+                FROM users
+                WHERE email = :login OR username = :login
+                """
+            ),
+            {"login": payload.login.lower()}
+        ).mappings().first()
+    
+    if not row:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    if not pwd_context.verify(payload.password, row["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Create JWT with user_id as subject
+    access_token = create_access_token({
+        "sub": str(row["id"]),
+        "email": row["email"],
+        "username": row["username"]
+    })
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": row["id"],
+            "first_name": row["first_name"],
+            "last_name": row["last_name"],
+            "email": row["email"],
+            "username": row["username"]
+        }
+    }
 
 @app.post("/teams")
 async def create_team(payload: dict):
@@ -183,6 +569,7 @@ def list_posts():
         if r.get(f"post:{row['id']}:active") == "1":
             posts.append(dict(row))
     return posts
+
 
 
 @app.websocket("/ws")

@@ -22,6 +22,38 @@ details using external communication.
 - Docker Desktop
 - Python 3.11+
 - Node.js 20+
+- Configure/Create .env files
+- Configure/Create servers.json
+
+## Configure Environment Files
+When working locally, you have to set up the .env files for both the backend and frontend manually.
+The backend\\.env.example file describes what should be contained in each of these files.
+
+frontend\\.env.local - contains the localhost port where the backend is being hosted, 8000 by default
+```
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+NEXT_PUBLIC_WS_BASE_URL=http://localhost:8000
+```
+
+backend\\.env.local - contains default ports for the database, redis, and frontend. However, the user must configure the secret key, email, and password.
+```
+APP_ENV=dev
+DATABASE_URL=postgresql+psycopg2://openmatch:openmatch@localhost:5432/openmatch
+REDIS_URL=redis://localhost:6379/0
+FRONTEND_URL=http://localhost:3000
+SECRET_KEY=SECRET_KEY_GOES_HERE
+MAIL_USERNAME=EMAIL_USERNAME_GOES_HERE
+MAIL_PASSWORD=EMAIL_PASSWORD_GOES_HERE
+```
+The backend requires a SECRET_KEY environment variable for JWT authentication. Generate one with:
+```bash
+openssl rand -hex 32
+or 
+```
+```bash
+python -c "import secrets; print(secrets.token_hex(32))" 
+```
+The backend also requires an email address and password from which verification emails for openmatch are sent. If done with gmail, the password must be a 16 character app password.
 
 ## Run Locally
 
@@ -47,9 +79,27 @@ python -m venv .venv
 # macOS/Linux:
 ```bash
 source .venv/bin/activate
+```
 
+### Install requirements and run backend
+```bash
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
+```
+
+##### Check the docs at:
+
+http://localhost:8000/docs#/
+
+Or
+
+http://localhost:8000/redoc
+
+##### =-=-= Testing: pytest =-=-=
+
+In .\backend\, run:
+```bash
+pytest
 ```
 
 ### 3. Run the frontend
@@ -61,10 +111,13 @@ npm run dev
 
 Start pgAdmin: 
 
+For running pgAdmin without information in servers.json and docker-compose.yaml:
+
 Windows: 
 ```bash
 docker run -p 5050:80 -e PGADMIN_DEFAULT_EMAIL=admin@example.com -e PGADMIN_DEFAULT_PASSWORD=admin dpage/pgadmin4
 ```
+Otherwise, docker-compose.yaml contains all neccessary information to automatically start and configure a local/production database.
 
 check docker using:
 
@@ -73,8 +126,11 @@ docker ps
 ```
 pgAdmin: http://localhost:5050/login
 
-Email: admin@example.com
-Password: admin
+Email: ``` admin@example.com ```
+
+Password: ``` admin ```
+
+Local Database Passowrd: ``` openmatch ```
 
 # Deployment using Render
 
@@ -92,6 +148,7 @@ Go to Renders website and link the repo, then select the render.yaml to build.
 
 # Access deployed database using Render
 
+### **This section applies only if servers.json was not created**
 In pgAdmin, right click Servers => Register => Server
 
 Go your render database and copy the external connection details and paste into pgAdmin:
@@ -109,15 +166,16 @@ Finally click save.
 # Live Web-app
 
 https://openmatch-frontend.onrender.com
+
 https://openmatch-backend.onrender.com/health
 
 # How to contribute
 Follow this project board to know the latest status of the project: [https://github.com/orgs/cis3296s26/projects/28](https://github.com/orgs/cis3296s26/projects/28)  
 
-### How to build
+<!-- ### How to build
 - Use this github repository: https://github.com/cis3296s26/final-project-01-openmatch.git
 - Specify what branch to use for a more stable release or for cutting edge development.  
 - Use InteliJ 11
 - Specify additional library to download if needed 
 - What file and target to compile and run. 
-- What is expected to happen when the app start. 
+- What is expected to happen when the app start.  -->
