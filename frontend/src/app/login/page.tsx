@@ -1,7 +1,8 @@
 "use client"
 
-import { useRouter } from "next/navigation";
+import { saveAuth, type AuthResponse } from "@/lib/auth";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import toast from "react-hot-toast";
 
@@ -23,30 +24,30 @@ export default function LoginPage() {
     const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
         e.preventDefault();
 
-        try{
-            await loginUser(formData)
+        try {
+            const authResponse = await loginUser(formData);
+            saveAuth(authResponse);
             toast.success("Logged in successfully");
             router.push("/");
-        }
-        catch (err) {
+        } catch (err) {
             console.error(err);
-            toast.error(err instanceof Error ? err.message : "Failed to Login")
+            toast.error(err instanceof Error ? err.message : "Failed to Login");
         }
     }
 
-    async function loginUser(data: LoginInput) {
+    async function loginUser(data: LoginInput): Promise<AuthResponse> {
         const res = await fetch(`${API}/login`, {
             method: "POST",
-            headers: { "Content-Type": "application/json"},
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(data),
         });
 
-        if(!res.ok){
-            throw new Error("Failed to login");
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.detail || "Failed to login");
         }
 
-        const user = await res.json();
-        return user;
+        return res.json();
     }
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {

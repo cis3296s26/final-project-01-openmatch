@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { getUser, clearAuth, type User } from "@/lib/auth";
 
 type Team = {
   id: number;
@@ -34,8 +35,17 @@ export default function Home() {
   const [postTeamId, setPostTeamId] = useState<number | null>(null);
   const [skill, setSkill] = useState("Casual");
   const [note, setNote] = useState("");
+  const [user, setUser] = useState<User | null>(() => {
+    if (typeof window === "undefined") return null;
+    return getUser();
+  });
 
   const wsRef = useRef<WebSocket | null>(null);
+
+  function handleLogout() {
+    clearAuth();
+    setUser(null);
+  }
 
   async function refresh() {
     const [t, p] = await Promise.all([
@@ -115,12 +125,30 @@ export default function Home() {
       <header className="space-y-2">
                 <div className="flex items-center justify-between gap-4">
           <h1 className="text-3xl font-bold">Open Match</h1>
-          <Link
-            href="/login"
-            className="rounded-lg border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 shadow-sm transition hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
-          >
-            Login
-          </Link>
+          {user ? (
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-700">Hi, {user.first_name}</span>
+              <Link
+                href="/profile"
+                className="rounded-lg border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 shadow-sm transition hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+              >
+                Profile
+              </Link>
+              <button
+                onClick={handleLogout}
+                className="rounded-lg border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 shadow-sm transition hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+              >
+                Logout
+              </button>
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              className="rounded-lg border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 shadow-sm transition hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+            >
+              Login
+            </Link>
+          )}
         </div>
         <p className="text-gray-600">
           Real-time availability board + match posts + map links.
