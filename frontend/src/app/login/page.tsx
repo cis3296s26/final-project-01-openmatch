@@ -8,6 +8,9 @@ import toast from "react-hot-toast";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
+console.log("LOGIN PAGE BUILD MARKER v123");
+console.log("API VALUE:", API);
+
 type LoginInput = {
     login: string;
     password: string;
@@ -36,7 +39,9 @@ export default function LoginPage() {
     }
 
     async function loginUser(data: LoginInput): Promise<AuthResponse> {
+        console.log("LOGIN FETCH TARGET:", `${API}/login`);
         const res = await fetch(`${API}/login`, {
+            
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(data),
