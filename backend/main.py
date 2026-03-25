@@ -3,6 +3,7 @@ import json
 from datetime import datetime, timezone, timedelta
 from typing import List
 
+from dotenv import load_dotenv
 import redis
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +14,12 @@ from dotenv import load_dotenv
 from typing import List, Optional
 from pydantic import BaseModel, EmailStr, field_validator, Field
 from passlib.context import CryptContext
+import secrets
+import hashlib
+
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from jose import jwt, JWTError
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -36,6 +43,10 @@ DATABASE_URL = os.getenv(
     "postgresql+psycopg2://openmatch:openmatch@localhost:5432/openmatch",
 )
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+FRONTEND_URL = os.getenv("FRONTEND_URL")
+
+MAIL_SENDER = os.getenv("MAIL_USERNAME")
+MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
@@ -53,6 +64,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def send_email(to: str, subject: str, body: str):
+    sender = MAIL_SENDER
+    password = MAIL_PASSWORD
+
+    msg = MIMEMultipart()
+    msg["From"] = sender
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "html"))
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(sender, password)
+        server.sendmail(sender, to, msg.as_string())
 # Security scheme for protected routes
 security = HTTPBearer()
 # ============== JWT UTILITIES ==============
@@ -158,6 +182,18 @@ def init_db() -> None:
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
 
+                CREATE TABLE IF NOT EXISTS email_verification_tokens (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    expires_at TIMESTAMPTZ NOT NULL,
+                    used_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_token_hash
+                    ON email_verification_tokens(token_hash);
+
                 CREATE TABLE IF NOT EXISTS profiles (
                     id SERIAL PRIMARY KEY,
                     user_id INT UNIQUE REFERENCES users(id) ON DELETE CASCADE,
@@ -231,8 +267,8 @@ def create_user(payload: UserCreate):
             row = conn.execute(
                 text(
                     """
-                    INSERT INTO users (first_name, last_name, email, username, password_hash)
-                    VALUES (:first_name, :last_name, :email, :username, :password_hash)
+                    INSERT INTO users (first_name, last_name, email, username, password_hash, email_verified)
+                    VALUES (:first_name, :last_name, :email, :username, :password_hash, FALSE)
                     RETURNING id, first_name, last_name, email, username, created_at
                     """
                 ),
@@ -245,9 +281,92 @@ def create_user(payload: UserCreate):
                 },
             ).mappings().one()
 
+#             Creation of the token and inserting it into table
+            plaintext_token = secrets.token_urlsafe(32)
+            hashed_token = hashlib.sha256(plaintext_token.encode()).hexdigest()
+            verify_url = f"{FRONTEND_URL}/login/verify?token={plaintext_token}"
+
+            print(verify_url)
+
+            send_email(
+                to=row["email"],
+                subject="Openmatch Email Verification",
+                body=verify_url
+            )
+
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
+                    VALUES (:user_id, :token_hash, :expires_at)
+                    """
+                ),
+                {
+                    "user_id": row["id"],
+                    "token_hash": hashed_token,
+                    "expires_at": datetime.now(timezone.utc) + timedelta(hours=24),
+                },
+            )
+
         return dict(row)
     except IntegrityError:
         raise HTTPException(status_code=400, detail="Email or username already exists")
+
+@app.get("/verify")
+def verify_email(token: str):
+    try:
+        with engine.begin() as conn:
+            # Hash plain text token from email
+            hashed_token = hashlib.sha256(token.encode()).hexdigest()
+
+            # Grab the stuff from the table
+            row = conn.execute(
+                text(
+                    """
+                    SELECT id, user_id, expires_at, used_at
+                    FROM email_verification_tokens
+                    WHERE token_hash = :desired_token_hash
+                    """
+                ),
+                {
+                    "desired_token_hash": hashed_token
+                }
+            ).mappings().one()
+
+            # Check if that matches
+            if not row:
+                raise HTTPException(status_code=400, detail="Invalid token")
+            if row["used_at"] is not None:
+                raise HTTPException(status_code=400, detail="Token already used")
+            if row["expires_at"] < datetime.now(timezone.utc):
+                raise HTTPException(status_code=400, detail="Token expired")
+
+            conn.execute(
+                text(
+                    """
+                    UPDATE users SET email_verified = TRUE WHERE id = :user_id
+                    """
+                ),
+                {
+                    "user_id": row["user_id"],
+                }
+            )
+
+            conn.execute(
+                text(
+                    """
+                    UPDATE email_verification_tokens SET used_at = :used_at WHERE id = :id
+                    """
+                ),
+                {
+                    "used_at": datetime.now(timezone.utc),
+                    "id": row["id"],
+                }
+            )
+    except IntegrityError:
+        raise HTTPException(status_code=400, detail="Email or username already exists")
+
+
 
 @app.get("/users/{user_id}")
 def get_user(user_id: int):
