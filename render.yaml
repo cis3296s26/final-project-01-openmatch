@@ -18,10 +18,8 @@ services:
       - key: MAIL_PASSWORD
         sync: false
       - key: SECRET_KEY
-          value:
-      - key: JWT_SECRET_KEY
-        generateValue: true
-      - key: JWT_ACCESS_TOKEN_EXPIRES
+          generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: 1440
       - key: DATABASE_URL
         fromDatabase:
