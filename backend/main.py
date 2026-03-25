@@ -216,7 +216,7 @@ def create_user(payload: UserCreate):
 
             plaintext_token = secrets.token_urlsafe(32)
             hashed_token = hashlib.sha256(plaintext_token.encode()).hexdigest()
-            print(plaintext_token)
+            print(f"localhost:3000/login/verify?token={plaintext_token}")
 
             conn.execute(
                 text(
