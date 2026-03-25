@@ -4,7 +4,7 @@ services:
     runtime: docker
     rootDir: backend
     dockerfilePath: ./Dockerfile
-    dockerContext: .
+    dockerContext: ./backend
     plan: free
     autoDeployTrigger: commit
     healthCheckPath: /health
@@ -34,7 +34,7 @@ services:
     runtime: docker
     rootDir: frontend
     dockerfilePath: ./Dockerfile
-    dockerContext: .
+    dockerContext: ./frontend
     plan: free
     autoDeployTrigger: commit
     envVars:
