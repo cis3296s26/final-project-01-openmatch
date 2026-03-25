@@ -13,9 +13,7 @@ services:
         value: prod
       - key: FRONTEND_URL
         value: https://openmatch-frontend.onrender.com
-      - key: MAIL_USERNAME
-        sync: false
-      - key: MAIL_PASSWORD
+      - key: RESEND_API_KEY
         sync: false
       - key: SECRET_KEY
         generateValue: true

@@ -21,3 +21,4 @@ SQLAlchemy==2.0.46
 uvicorn==0.40.0
 watchfiles==1.1.1
 websockets==16.0
+resend==0.6.0
