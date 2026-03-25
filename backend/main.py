@@ -3,6 +3,7 @@ import json
 from datetime import datetime, timezone, timedelta
 from typing import List
 
+from dotenv import load_dotenv
 import redis
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,11 +13,16 @@ from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from pydantic import BaseModel, EmailStr, field_validator, Field
 from passlib.context import CryptContext
-
+from dotenv import load_dotenv
 import secrets
 import hashlib
 
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+load_dotenv()
 
 APP_ENV = os.getenv("APP_ENV", "dev")
 
@@ -25,6 +31,10 @@ DATABASE_URL = os.getenv(
     "postgresql+psycopg2://openmatch:openmatch@localhost:5432/openmatch",
 )
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+FRONTEND_URL = os.getenv("FRONTEND_URL")
+
+MAIL_SENDER = os.getenv("MAIL_USERNAME")
+MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
@@ -42,6 +52,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def send_email(to: str, subject: str, body: str):
+    sender = MAIL_SENDER
+    password = MAIL_PASSWORD
+
+    msg = MIMEMultipart()
+    msg["From"] = sender
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "html"))
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(sender, password)
+        server.sendmail(sender, to, msg.as_string())
 
 # Simple websocket manager
 class ConnectionManager:
@@ -214,9 +237,18 @@ def create_user(payload: UserCreate):
                 },
             ).mappings().one()
 
+#             Creation of the token and inserting it into table
             plaintext_token = secrets.token_urlsafe(32)
             hashed_token = hashlib.sha256(plaintext_token.encode()).hexdigest()
-            print(f"localhost:3000/login/verify?token={plaintext_token}")
+            verify_url = f"{FRONTEND_URL}/login/verify?token={plaintext_token}"
+
+            print(verify_url)
+
+            send_email(
+                to=row["email"],
+                subject="Openmatch Email Verification",
+                body=verify_url
+            )
 
             conn.execute(
                 text(
