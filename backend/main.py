@@ -301,7 +301,7 @@ def create_user(payload: UserCreate):
 
             plaintext_token = secrets.token_urlsafe(32)
             hashed_token = hashlib.sha256(plaintext_token.encode()).hexdigest()
-            verify_url = f"{FRONTEND_URL}/login/verify?token={plaintext_token}"
+            verify_url = f"{FRONTEND_URL}/login/verify/{plaintext_token}"
 
             conn.execute(
                 text(
