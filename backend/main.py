@@ -1,6 +1,6 @@
 import os
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List
 
 import redis
@@ -12,6 +12,9 @@ from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from pydantic import BaseModel, EmailStr, field_validator, Field
 from passlib.context import CryptContext
+
+import secrets
+import hashlib
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -112,6 +115,18 @@ def init_db() -> None:
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
 
+                CREATE TABLE IF NOT EXISTS email_verification_tokens (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    expires_at TIMESTAMPTZ NOT NULL,
+                    used_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_token_hash
+                    ON email_verification_tokens(token_hash);
+
                 CREATE TABLE IF NOT EXISTS profiles (
                     id SERIAL PRIMARY KEY,
                     user_id INT UNIQUE REFERENCES users(id) ON DELETE CASCADE,
@@ -185,8 +200,8 @@ def create_user(payload: UserCreate):
             row = conn.execute(
                 text(
                     """
-                    INSERT INTO users (first_name, last_name, email, username, password_hash)
-                    VALUES (:first_name, :last_name, :email, :username, :password_hash)
+                    INSERT INTO users (first_name, last_name, email, username, password_hash, email_verified)
+                    VALUES (:first_name, :last_name, :email, :username, :password_hash, FALSE)
                     RETURNING id, first_name, last_name, email, username, created_at
                     """
                 ),
@@ -199,9 +214,83 @@ def create_user(payload: UserCreate):
                 },
             ).mappings().one()
 
+            plaintext_token = secrets.token_urlsafe(32)
+            hashed_token = hashlib.sha256(plaintext_token.encode()).hexdigest()
+            print(plaintext_token)
+
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
+                    VALUES (:user_id, :token_hash, :expires_at)
+                    """
+                ),
+                {
+                    "user_id": row["id"],
+                    "token_hash": hashed_token,
+                    "expires_at": datetime.now(timezone.utc) + timedelta(hours=24),
+                },
+            )
+
         return dict(row)
     except IntegrityError:
         raise HTTPException(status_code=400, detail="Email or username already exists")
+
+@app.get("/verify")
+def verify_email(token: str):
+    try:
+        with engine.begin() as conn:
+            # Hash plain text token from email
+            hashed_token = hashlib.sha256(token.encode()).hexdigest()
+
+            # Grab the stuff from the table
+            row = conn.execute(
+                text(
+                    """
+                    SELECT id, user_id, expires_at, used_at
+                    FROM email_verification_tokens
+                    WHERE token_hash = :desired_token_hash
+                    """
+                ),
+                {
+                    "desired_token_hash": hashed_token
+                }
+            ).mappings().one()
+
+            # Check if that matches
+            if not row:
+                raise HTTPException(status_code=400, detail="Invalid token")
+            if row["used_at"] is not None:
+                raise HTTPException(status_code=400, detail="Token already used")
+            if row["expires_at"] < datetime.now(timezone.utc):
+                raise HTTPException(status_code=400, detail="Token expired")
+
+            conn.execute(
+                text(
+                    """
+                    UPDATE users SET email_verified = TRUE WHERE id = :user_id
+                    """
+                ),
+                {
+                    "user_id": row["user_id"],
+                }
+            )
+
+            conn.execute(
+                text(
+                    """
+                    UPDATE email_verification_tokens SET used_at = :used_at WHERE id = :id
+                    """
+                ),
+                {
+                    "used_at": datetime.now(timezone.utc),
+                    "id": row["id"],
+                }
+            )
+    except IntegrityError:
+        raise HTTPException(status_code=400, detail="Email or username already exists")
+
+
 
 @app.get("/users/{user_id}")
 def get_user(user_id: int):
