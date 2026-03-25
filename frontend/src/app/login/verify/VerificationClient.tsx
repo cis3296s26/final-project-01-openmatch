@@ -1,19 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
 type Status = "success" | "error" | "loading";
 
-export default function VerificationPage({
-  params,
-}: {
-  params: { token: string };
-}) {
+export default function VerificationClient() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [status, setStatus] = useState<Status>("loading");
   const [message, setMessage] = useState("Verifying...");
@@ -22,9 +19,7 @@ export default function VerificationPage({
     let cancelled = false;
 
     async function verify() {
-      const token = params.token;
-
-      console.log("VERIFY TOKEN:", token);
+      const token = searchParams.get("token");
 
       if (!token) {
         if (!cancelled) {
@@ -36,11 +31,7 @@ export default function VerificationPage({
 
       try {
         const url = `${API}/verify?token=${encodeURIComponent(token)}`;
-        console.log("VERIFY FETCH:", url);
-
         const res = await fetch(url);
-
-        console.log("VERIFY STATUS:", res.status);
 
         if (!res.ok) {
           throw new Error("Verification failed");
@@ -49,17 +40,12 @@ export default function VerificationPage({
         if (!cancelled) {
           setStatus("success");
           setMessage("Verification successful! Redirecting to login...");
-
-          setTimeout(() => {
-            router.push("/login");
-          }, 2000);
+          setTimeout(() => router.push("/login"), 2000);
         }
-      } catch (err) {
-        console.error("VERIFY ERROR:", err);
-
+      } catch {
         if (!cancelled) {
           setStatus("error");
-          setMessage("Verification failed. Please try again.");
+          setMessage("Uh oh! Something went wrong!");
         }
       }
     }
@@ -69,24 +55,20 @@ export default function VerificationPage({
     return () => {
       cancelled = true;
     };
-  }, [params.token, router]);
+  }, [searchParams, router]);
 
   return (
-    <main className="min-h-screen max-w-5xl mx-auto p-8 flex items-center justify-center">
-      <section className="w-full max-w-md border rounded-lg p-6 text-center space-y-4">
-        <h1 className="text-xl font-bold">Email Verification</h1>
-
-        <p>{message}</p>
-
-        {status === "success" && (
-          <Link
-            href="/login"
-            className="text-blue-600 hover:underline block"
-          >
-            Go to login now
-          </Link>
-        )}
-      </section>
+    <main className="min-h-screen max-w-5xl mx-auto p-8 space-y-10">
+      <div className="flex items-center justify-center">
+        <section className="mx-auto w-3/5 min-w-xs rounded-lg border p-8 space-y-3">
+          <p>{message}</p>
+          {status === "success" && (
+            <Link href="/login" className="text-blue-600 hover:underline">
+              Go to login now
+            </Link>
+          )}
+        </section>
+      </div>
     </main>
   );
 }
