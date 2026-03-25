@@ -2,7 +2,6 @@
 
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import Link from "next/link";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
