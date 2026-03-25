@@ -64,19 +64,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# def send_email(to: str, subject: str, body: str):
-#     sender = MAIL_SENDER
-#     password = MAIL_PASSWORD
+def send_email(to: str, subject: str, body: str):
+    sender = MAIL_SENDER
+    password = MAIL_PASSWORD
 
-#     msg = MIMEMultipart()
-#     msg["From"] = sender
-#     msg["To"] = to
-#     msg["Subject"] = subject
-#     msg.attach(MIMEText(body, "html"))
+    msg = MIMEMultipart()
+    msg["From"] = sender
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "html"))
 
-#     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-#         server.login(sender, password)
-#         server.sendmail(sender, to, msg.as_string())
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(sender, password)
+        server.sendmail(sender, to, msg.as_string())
 # Security scheme for protected routes
 security = HTTPBearer()
 # ============== JWT UTILITIES ==============
