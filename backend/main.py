@@ -5,10 +5,11 @@ from typing import List
 
 from dotenv import load_dotenv
 import redis
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
+from dotenv import load_dotenv
 
 from typing import List, Optional
 from pydantic import BaseModel, EmailStr, field_validator, Field
@@ -19,8 +20,21 @@ import hashlib
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from jose import jwt, JWTError
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+# Load environment variables from .env file
+load_dotenv()
+load_dotenv(".env.local")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# JWT Configuration
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY environment variable is not set")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 
 APP_ENV = os.getenv("APP_ENV", "dev")
 
@@ -63,6 +77,39 @@ def send_email(to: str, subject: str, body: str):
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(sender, password)
         server.sendmail(sender, to, msg.as_string())
+# Security scheme for protected routes
+security = HTTPBearer()
+# ============== JWT UTILITIES ==============
+def create_access_token(data: dict) -> str:
+    """
+    Create a JWT token with the given payload.
+    The token includes 'sub' (subject/user_id) and 'exp' (expiration).
+    """
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+def verify_token(token: str) -> dict | None:
+    """
+    Verify and decode a JWT token.
+    Returns the payload if valid, None if invalid/expired.
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except JWTError:
+        return None
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    """
+    Dependency that extracts and validates the JWT from the Authorization header.
+    Use this to protect routes that require authentication.
+    """
+    token = credentials.credentials
+    payload = verify_token(token)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return payload
+
 
 # Simple websocket manager
 class ConnectionManager:
@@ -109,7 +156,6 @@ class UserCreate(BaseModel):
 
 
 class ProfileCreate(BaseModel):
-    user_id: int
     display_name: str = Field(..., min_length=1, max_length=50)
     bio: Optional[str] = Field(default=None, max_length=1000)
     location: Optional[str] = Field(default=None, max_length=100)
@@ -340,24 +386,35 @@ def get_user(user_id: int):
     return dict(row)
 
 @app.post("/profiles", status_code=201)
-def create_profile(payload: ProfileCreate):
-    with engine.begin() as conn:
-        row = conn.execute(
-            text(
-                """
-                INSERT INTO profiles (user_id, display_name, bio, location)
-                VALUES (:user_id, :display_name, :bio, :location)
-                RETURNING id, user_id, display_name, bio, location, created_at, updated_at
-                """
-            ),
-            {
-                "user_id": payload.user_id,
-                "display_name": payload.display_name,
-                "bio": payload.bio,
-                "location": payload.location,
-            }
-        ).mappings().one()
-    return dict(row)
+def create_profile(payload: ProfileCreate, current_user: dict = Depends(get_current_user)):
+    """Protected: Creates or updates a profile for the authenticated user."""
+    user_id = int(current_user["sub"])
+    
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    INSERT INTO profiles (user_id, display_name, bio, location)
+                    VALUES (:user_id, :display_name, :bio, :location)
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        display_name = :display_name,
+                        bio = :bio,
+                        location = :location,
+                        updated_at = NOW()
+                    RETURNING id, user_id, display_name, bio, location, created_at, updated_at
+                    """
+                ),
+                {
+                    "user_id": user_id,
+                    "display_name": payload.display_name,
+                    "bio": payload.bio,
+                    "location": payload.location,
+                }
+            ).mappings().one()
+        return dict(row)
+    except IntegrityError:
+        raise HTTPException(status_code=400, detail="Failed to create profile")
 
 @app.get("/profiles/{profile_id}")
 def get_profile(profile_id: int):
@@ -398,24 +455,38 @@ def login(payload: UserLogin):
         row = conn.execute(
             text(
                 """
-                SELECT id, email, username, password_hash
+                SELECT id, first_name, last_name, email, username, password_hash
                 FROM users
                 WHERE email = :login OR username = :login
                 """
             ),
-            {"login": payload.login}
-            ).mappings().first()
-        if not row:
-            return {"error": "Invalid credentials"}
-        
-        if not pwd_context.verify(payload.password, row["password_hash"]):
-            return {"error": "Invalid credentials"}
-        
-        return {
+            {"login": payload.login.lower()}
+        ).mappings().first()
+    
+    if not row:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    if not pwd_context.verify(payload.password, row["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Create JWT with user_id as subject
+    access_token = create_access_token({
+        "sub": str(row["id"]),
+        "email": row["email"],
+        "username": row["username"]
+    })
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
             "id": row["id"],
+            "first_name": row["first_name"],
+            "last_name": row["last_name"],
             "email": row["email"],
             "username": row["username"]
         }
+    }
 
 @app.post("/teams")
 async def create_team(payload: dict):
