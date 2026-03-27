@@ -37,6 +37,7 @@ export default function LoginPage() {
 
     async function loginUser(data: LoginInput): Promise<AuthResponse> {
         const res = await fetch(`${API}/login`, {
+            
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(data),
