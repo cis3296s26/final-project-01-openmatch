@@ -481,7 +481,7 @@ def login(payload: UserLogin):
         row = conn.execute(
             text(
                 """
-                SELECT id, first_name, last_name, email, username, password_hash
+                SELECT id, first_name, last_name, email, username, password_hash, email_verified
                 FROM users
                 WHERE email = :login OR username = :login
                 """
@@ -494,6 +494,12 @@ def login(payload: UserLogin):
 
     if not pwd_context.verify(payload.password, row["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if not row["email_verified"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Please verify your email before signing in",
+        )
 
     access_token = create_access_token({
         "sub": str(row["id"]),

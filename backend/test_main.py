@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
-from main import pwd_context, app
+
+from main import app, create_access_token, pwd_context
 
 
 client = TestClient(app)
@@ -72,10 +73,14 @@ def test_create_profile(mock_engine):
     fake_engine = _mock_begin_with_row(fake_row, method="one")
     mock_engine.begin = fake_engine.begin
 
+    token = create_access_token(
+        {"sub": "1", "email": "testuser@example.com", "username": "testuser"}
+    )
+
     response = client.post(
         "/profiles",
+        headers={"Authorization": f"Bearer {token}"},
         json={
-            "user_id": 1,
             "display_name": "Test User",
             "bio": "This is a test bio.",
             "location": "Test Location",
@@ -99,9 +104,12 @@ def test_login(mock_engine):
 
     fake_row = {
         "id": 1,
+        "first_name": "Test",
+        "last_name": "User",
         "email": "testuser@example.com",
         "username": "testuser",
         "password_hash": pwd_context.hash("testpassword"),
+        "email_verified": True,
     }
 
     fake_engine = _mock_begin_with_row(fake_row, method="first")
@@ -118,9 +126,11 @@ def test_login(mock_engine):
     assert response.status_code == 200
 
     data = response.json()
-    assert data["id"] == 1
-    assert data["email"] == "testuser@example.com"
-    assert data["username"] == "testuser"
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+    assert data["user"]["id"] == 1
+    assert data["user"]["email"] == "testuser@example.com"
+    assert data["user"]["username"] == "testuser"
 
 
 @patch("main.engine")
@@ -129,9 +139,12 @@ def test_login_invalid_password(mock_engine):
 
     fake_row = {
         "id": 1,
+        "first_name": "Test",
+        "last_name": "User",
         "email": "testuser@example.com",
         "username": "testuser",
         "password_hash": pwd_context.hash("correctpassword"),
+        "email_verified": True,
     }
 
     fake_engine = _mock_begin_with_row(fake_row, method="first")
@@ -145,8 +158,8 @@ def test_login_invalid_password(mock_engine):
         },
     )
 
-    assert response.status_code == 200
-    assert response.json() == {"error": "Invalid credentials"}
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid credentials"}
 
 @patch("main.engine")
 def test_login_user_not_found(mock_engine):
@@ -161,8 +174,39 @@ def test_login_user_not_found(mock_engine):
         },
     )
 
-    assert response.status_code == 200
-    assert response.json() == {"error": "Invalid credentials"}
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid credentials"}
+
+
+@patch("main.engine")
+def test_login_email_not_verified(mock_engine):
+    from main import pwd_context
+
+    fake_row = {
+        "id": 1,
+        "first_name": "Test",
+        "last_name": "User",
+        "email": "testuser@example.com",
+        "username": "testuser",
+        "password_hash": pwd_context.hash("testpassword"),
+        "email_verified": False,
+    }
+
+    fake_engine = _mock_begin_with_row(fake_row, method="first")
+    mock_engine.begin = fake_engine.begin
+
+    response = client.post(
+        "/login",
+        json={
+            "login": "testuser",
+            "password": "testpassword",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "Please verify your email before signing in",
+    }
 
 
 # ==== TESTS FOR GET ENDPOINTS ====
