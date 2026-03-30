@@ -305,7 +305,7 @@ async def create_user(payload: UserCreate):
     except IntegrityError:
         raise HTTPException(status_code=400, detail="Email or username already exists")
 
-async def create_and_send_verification_email(row: json, conn):
+async def create_and_send_verification_email(row: map, conn):
     # Token generation
     plaintext_token = secrets.token_urlsafe(32)
     hashed_token = hashlib.sha256(plaintext_token.encode()).hexdigest()
@@ -320,7 +320,7 @@ async def create_and_send_verification_email(row: json, conn):
             """
         ),
         {
-            "user_id": row.id,
+            "user_id": row["id"],
             "token_hash": hashed_token,
             "expires_at": datetime.now(timezone.utc) + timedelta(hours=24),
         },
