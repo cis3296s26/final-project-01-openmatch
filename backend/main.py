@@ -279,7 +279,7 @@ def health():
 
 
 @app.post("/users", status_code=201)
-def create_user(payload: UserCreate):
+async def create_user(payload: UserCreate):
     try:
         with engine.begin() as conn:
             row = conn.execute(
@@ -299,47 +299,54 @@ def create_user(payload: UserCreate):
                 },
             ).mappings().one()
 
-            plaintext_token = secrets.token_urlsafe(32)
-            hashed_token = hashlib.sha256(plaintext_token.encode()).hexdigest()
-            verify_url = f"{FRONTEND_URL}/login/verify?token={plaintext_token}"
-
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
-                    VALUES (:user_id, :token_hash, :expires_at)
-                    """
-                ),
-                {
-                    "user_id": row["id"],
-                    "token_hash": hashed_token,
-                    "expires_at": datetime.now(timezone.utc) + timedelta(hours=24),
-                },
-            )
-
-        email_html = f"""
-        <p>Welcome to OpenMatch.</p>
-        <p>Please verify your email by clicking the link below:</p>
-        <p><a href="{verify_url}">Verify Email</a></p>
-        <p>{verify_url}</p>
-        """
-
-        try:
-            send_email(
-                to=row["email"],
-                subject="Openmatch Email Verification",
-                body=email_html
-            )
-        except Exception as e:
-            print(f"EMAIL FAILED: {e}. Is this intentional?")
-
-        # Print verification email contents to console if MAIL_USERNAME is not defined (For development)
-        if not MAIL_SENDER:
-            print(email_html)
+            await create_and_send_verification_email(row, conn)
 
         return dict(row)
     except IntegrityError:
         raise HTTPException(status_code=400, detail="Email or username already exists")
+
+async def create_and_send_verification_email(row: json, conn):
+    # Token generation
+    plaintext_token = secrets.token_urlsafe(32)
+    hashed_token = hashlib.sha256(plaintext_token.encode()).hexdigest()
+    verify_url = f"{FRONTEND_URL}/login/verify?token={plaintext_token}"
+
+    # Insert the new email token into the database
+    conn.execute(
+        text(
+            """
+            INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
+            VALUES (:user_id, :token_hash, :expires_at)
+            """
+        ),
+        {
+            "user_id": row.id,
+            "token_hash": hashed_token,
+            "expires_at": datetime.now(timezone.utc) + timedelta(hours=24),
+        },
+    )
+
+    # Email Formatting
+    email_html = f"""
+    <p>Welcome to OpenMatch.</p>
+    <p>Please verify your email by clicking the link below:</p>
+    <p><a href="{verify_url}">Verify Email</a></p>
+    <p>{verify_url}</p>
+    """
+
+    # Try to send the email
+    try:
+        send_email(
+            to=row["email"],
+            subject="Openmatch Email Verification",
+            body=email_html
+        )
+    except Exception as e:
+        print(f"EMAIL FAILED: {e}. Is this intentional?")
+
+    # Print verification email contents to console if MAIL_USERNAME is not defined (For development)
+    if not MAIL_SENDER:
+        print(email_html)
 
 
 @app.get("/verify")
