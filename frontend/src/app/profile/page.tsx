@@ -110,7 +110,7 @@ export default function ProfilePage() {
                 <div className="flex items-center justify-between gap-4">
                     <h1 className="text-3xl font-bold">Open Match</h1>
                     <Link
-                        href="/"
+                        href="../dashboard"
                         className="rounded-lg border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 shadow-sm transition hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
                     >
                         Back to Home
