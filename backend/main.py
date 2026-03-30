@@ -331,7 +331,11 @@ def create_user(payload: UserCreate):
                 body=email_html
             )
         except Exception as e:
-            print(f"EMAIL FAILED: {e}")
+            print(f"EMAIL FAILED: {e}. Is this intentional?")
+
+        # Print verification email contents to console if MAIL_USERNAME is not defined (For development)
+        if not MAIL_SENDER:
+            print(email_html)
 
         return dict(row)
     except IntegrityError:
