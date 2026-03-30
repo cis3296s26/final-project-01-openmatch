@@ -28,7 +28,7 @@ export default function LoginPage() {
             const authResponse = await loginUser(formData);
             saveAuth(authResponse);
             toast.success("Logged in successfully");
-            router.push("/");
+            router.push("../dashboard");
         } catch (err) {
             console.error(err);
             toast.error(err instanceof Error ? err.message : "Failed to Login");
