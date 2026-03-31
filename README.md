@@ -14,6 +14,7 @@ match is accepted, participants are shown the selected field location and can co
 details using external communication.
 
 ![This is a screenshot.](POC_Image.png) 
+![This is a screenshot.](POC_Image2.png)
 
 # How to run
 
@@ -42,6 +43,8 @@ DATABASE_URL=postgresql+psycopg2://openmatch:openmatch@localhost:5432/openmatch
 REDIS_URL=redis://localhost:6379/0
 FRONTEND_URL=http://localhost:3000
 SECRET_KEY=SECRET_KEY_GOES_HERE
+
+** FOR DEVELOPEMENT THIS IS UNEEDED, IT WILL PRINT VERIFICATION TO CONSOLE **
 MAIL_USERNAME=EMAIL_USERNAME_GOES_HERE
 MAIL_PASSWORD=EMAIL_PASSWORD_GOES_HERE
 ```
