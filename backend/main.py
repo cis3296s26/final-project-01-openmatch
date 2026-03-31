@@ -363,6 +363,10 @@ async def resetAndSendToken(payload: UserLogin):
             {"login": payload.login.lower()}
         ).mappings().first()
 
+        # Catch if user does not exist
+        if not row:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+
         # Clear all existing tokens for this user
         conn.execute(
             text(
