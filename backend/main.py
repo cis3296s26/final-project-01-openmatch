@@ -348,6 +348,35 @@ async def create_and_send_verification_email(row: map, conn):
     if not MAIL_SENDER:
         print(email_html)
 
+@app.post("/resendVerification")
+async def resetAndSendToken(payload: UserLogin):
+    # Get the user's information
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT id, first_name, last_name, email, username
+                FROM users
+                WHERE email = :login OR username = :login
+                """
+            ),
+            {"login": payload.login.lower()}
+        ).mappings().first()
+
+        # Clear all existing tokens for this user
+        conn.execute(
+            text(
+                """
+                DELETE FROM email_verification_tokens WHERE user_id= :user_id
+                """
+            ),
+            {
+                "user_id": row["id"] 
+            }
+        )
+
+        # Create the token, add it to the database, and send it
+        await create_and_send_verification_email(row, conn)
 
 @app.get("/verify")
 def verify_email(token: str):

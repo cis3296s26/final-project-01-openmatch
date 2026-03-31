@@ -13,6 +13,11 @@ type LoginInput = {
     password: string;
 };
 
+type LoginError = {
+    status: number;
+    status_text: string;
+};
+
 export default function LoginPage() {
     const router = useRouter();
 
@@ -20,6 +25,15 @@ export default function LoginPage() {
         login: "",
         password: "",
     });
+
+    // State Handler for Login Errors, such as an email not being verified
+    const [loginErrorState, setLoginErrorState] = useState<LoginError>({
+        status: 0,
+        status_text: ""
+    })
+
+    // Text for email resend verification link
+    const [label, setLabel] = useState("Click here to send a new verification link!");
 
     const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -44,10 +58,31 @@ export default function LoginPage() {
 
         if (!res.ok) {
             const error = await res.json();
+            setLoginErrorState({
+                status: res.status,
+                status_text: res.statusText
+            })
             throw new Error(error.detail || "Failed to login");
         }
 
         return res.json();
+    }
+
+    // Clicking the resend verification link
+    async function handleResendVerification(e: React.MouseEvent) {
+        e.preventDefault();
+        setLabel("Sending...")
+
+        const payload = formData;
+        console.log(payload)
+        
+        const res = await fetch(`${API}/resendVerification`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json"},
+            body: JSON.stringify(payload)
+        });
+
+        setLabel("Sent!")
     }
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -99,6 +134,14 @@ export default function LoginPage() {
                             </button>
                         </div>
                     </form>
+
+                    {/* Field for login errors */}
+                    <div className="text-center justify-center">
+                        {loginErrorState?.status === 403 && <div>
+                            <p>Email for this account is not verified!</p>
+                            <Link className="text-blue-600 hover:underline" href="google.com" onClick={handleResendVerification}>{label}</Link>
+                        </div>}
+                    </div>
 
                     {/* Divider */}
                     <div className="flex-1 h-px bg-white mb-8"></div>
