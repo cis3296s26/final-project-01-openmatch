@@ -434,9 +434,9 @@ def verify_email(token: str):
         if not row:
             raise HTTPException(status_code=400, detail="Invalid token")
         if row["used_at"] is not None:
-            raise HTTPException(status_code=400, detail="Token already used")
+            raise HTTPException(status_code=410, detail="Token already used")
         if row["expires_at"] < datetime.now(timezone.utc):
-            raise HTTPException(status_code=400, detail="Token expired")
+            raise HTTPException(status_code=401, detail="Token expired")
 
         conn.execute(
             text(
