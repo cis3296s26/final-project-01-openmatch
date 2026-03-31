@@ -322,3 +322,68 @@ def test_get_user_profile_not_found(mock_engine):
     assert response.status_code == 404
     assert response.json() == {"detail": "Profile not found"}
 
+@patch("main.engine")
+def test_verification_returns_good(mock_engine):
+    from main import hashlib
+    from main import datetime, timedelta, timezone
+
+    fake_row = {
+        "id": 10,
+        "user_id": 1,
+        "expires_at": datetime.now(timezone.utc) + timedelta(hours=24),
+        "used_at": None,
+        "token_hash": hashlib.sha256("12345678".encode()).hexdigest()
+    }
+
+    fake_engine = _mock_begin_with_row(fake_row, method="first")
+    mock_engine.begin = fake_engine.begin
+
+    response = client.get("/verify?token=12345678")
+    assert response.status_code == 200
+
+@patch("main.engine")
+def test_verification_token_not_found(mock_engine):
+
+    fake_engine = _mock_begin_with_row(None, method="first")
+    mock_engine.begin = fake_engine.begin
+
+    response = client.get("/verify?token=12345678")
+    assert response.status_code == 400
+
+@patch("main.engine")
+def test_verification_token_already_used(mock_engine):
+    from main import hashlib
+    from main import datetime, timedelta, timezone
+
+    fake_row = {
+        "id": 10,
+        "user_id": 1,
+        "expires_at": datetime.now(timezone.utc) + timedelta(hours=24),
+        "used_at": datetime.now(timezone.utc),
+        "token_hash": hashlib.sha256("12345678".encode()).hexdigest()
+    }
+
+    fake_engine = _mock_begin_with_row(fake_row, method="first")
+    mock_engine.begin = fake_engine.begin
+
+    response = client.get("/verify?token=12345678")
+    assert response.status_code == 410
+
+@patch("main.engine")
+def test_verification_token_expired(mock_engine):
+    from main import hashlib
+    from main import datetime, timedelta, timezone
+
+    fake_row = {
+        "id": 10,
+        "user_id": 1,
+        "expires_at": datetime.now(timezone.utc) - timedelta(hours=24),
+        "used_at": None,
+        "token_hash": hashlib.sha256("12345678".encode()).hexdigest()
+    }
+
+    fake_engine = _mock_begin_with_row(fake_row, method="first")
+    mock_engine.begin = fake_engine.begin
+
+    response = client.get("/verify?token=12345678")
+    assert response.status_code == 401
