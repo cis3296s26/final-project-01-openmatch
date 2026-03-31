@@ -1,21 +1,124 @@
 "use client";
 
-import { useState } from "react";
-import { getUser, clearAuth } from "@/lib/auth";
-import { useRouter } from "next/navigation";
+import { authHeaders, clearAuth, getUser } from "@/lib/auth";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+
+const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
+
+type Sport = {
+  id: number;
+  name: string;
+};
+
+type Team = {
+  id: number;
+  name: string;
+  sport: string;
+  city: string;
+};
+
+type MatchPost = {
+  id: number;
+  user_id: number;
+  team_id: number | null;
+  sport_id: number;
+  sport_name: string;
+  team_name: string | null;
+  title: string;
+  skill: string;
+  location: string | null;
+  note: string | null;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
+  user_name?: string;
+};
+
+const SPORT_COLORS: Record<string, string> = {
+  "Soccer": "#4ade80",
+  "Basketball": "#fb923c",
+  "Tennis": "#facc15",
+  "Pickleball": "#a78bfa",
+  "Volleyball": "#f472b6",
+  "Flag Football": "#60a5fa",
+  "Badminton": "#34d399",
+  "Softball": "#fbbf24",
+  "Ultimate Frisbee": "#c084fc",
+  "Hockey": "#38bdf8",
+  "Rugby": "#fb7185",
+  "Lacrosse": "#2dd4bf",
+};
+
+const EXPIRATION_OPTIONS = [
+  { label: "30 minutes", value: 30 },
+  { label: "1 hour", value: 60 },
+  { label: "2 hours", value: 120 },
+  { label: "4 hours", value: 240 },
+  { label: "24 hours", value: 1440 },
+];
+
+const SKILL_LEVELS = ["Casual", "Intermediate", "Competitive"];
+
+function getTimeRemaining(expiresAt: string): string {
+  const now = new Date();
+  const expires = new Date(expiresAt);
+  const diff = expires.getTime() - now.getTime();
+  
+  if (diff <= 0) return "Expired";
+  
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(minutes / 60);
+  
+  if (hours > 0) {
+    return `${hours}h ${minutes % 60}m left`;
+  }
+  return `${minutes}m left`;
+}
+
+function TimeRemaining({ expiresAt }: { expiresAt: string }) {
+  const [timeLeft, setTimeLeft] = useState<string>("--");
+
+  useEffect(() => {
+    const frameId = requestAnimationFrame(() => {
+      setTimeLeft(getTimeRemaining(expiresAt));
+    });
+    
+    const interval = setInterval(() => {
+      setTimeLeft(getTimeRemaining(expiresAt));
+    }, 60000);
+    
+    return () => {
+      cancelAnimationFrame(frameId);
+      clearInterval(interval);
+    };
+  }, [expiresAt]);
+
+  return <>{timeLeft}</>;
+}
 
 export default function OpenMatchDashboard() {
-
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
-  const user = getUser();
+  const [user, setUser] = useState<ReturnType<typeof getUser>>(null);
 
-  function handleLogout() {
-    clearAuth();
-    router.push("../login");
-  }
+  const [posts, setPosts] = useState<MatchPost[]>([]);
+  const [sports, setSports] = useState<Sport[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [postsLoading, setPostsLoading] = useState(true);
+  const [showPostModal, setShowPostModal] = useState(false);
+  const [editingPost, setEditingPost] = useState<MatchPost | null>(null);
+  const [postMessage, setPostMessage] = useState("");
 
+  const [formSportId, setFormSportId] = useState<number | null>(null);
+  const [formTeamId, setFormTeamId] = useState<number | null>(null);
+  const [formTitle, setFormTitle] = useState("");
+  const [formSkill, setFormSkill] = useState("Casual");
+  const [formLocation, setFormLocation] = useState("");
+  const [formNote, setFormNote] = useState("");
+  const [formExpiration, setFormExpiration] = useState(60);
+  const [formSubmitting, setFormSubmitting] = useState(false);
 
   const [teamStatuses, setTeamStatuses] = useState<Record<string, boolean>>({
     "Broad St Ballers": true,
@@ -26,28 +129,191 @@ export default function OpenMatchDashboard() {
     setTeamStatuses((prev) => ({ ...prev, [teamName]: !prev[teamName] }));
   };
 
-  const activePosts = [
-    {
-      sport: "SOCCER",
-      team: "Broad St Ballers",
-      title: "Intermediate 5v5 · FDR Park",
-      quote: '"Chill vibe, just want a good run. Bring water."',
-      views: 3,
-      responses: 1,
-      time: "18 min ago",
-      sportColor: "#4ade80",
-    },
-    {
-      sport: "BASKETBALL",
-      team: "The Rim Breakers",
-      title: "Competitive 3v3 · Palumbo Rec Center",
-      quote: '"Looking for a serious game. No ball hogs."',
-      views: 11,
-      responses: 3,
-      time: "2 hrs ago",
-      sportColor: "#fb923c",
-    },
-  ];
+  function handleLogout() {
+    clearAuth();
+    router.push("../login");
+  }
+
+  useEffect(() => {
+    const currentUser = getUser();
+    setUser(currentUser);
+    fetchSports();
+    fetchTeams();
+    if (currentUser) {
+      fetchUserPosts(currentUser.id);
+    }
+  }, []);
+
+  async function fetchSports() {
+    try {
+      const res = await fetch(`${API}/sports`);
+      if (res.ok) {
+        const data = await res.json();
+        setSports(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch sports:", err);
+    }
+  }
+
+  async function fetchTeams() {
+    try {
+      const res = await fetch(`${API}/teams`);
+      if (res.ok) {
+        const data = await res.json();
+        setTeams(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch teams:", err);
+    }
+  }
+
+  async function fetchUserPosts(userId: number) {
+    setPostsLoading(true);
+    try {
+      const res = await fetch(`${API}/users/${userId}/posts`, {
+        headers: authHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPosts(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch posts:", err);
+    } finally {
+      setPostsLoading(false);
+    }
+  }
+
+  function openCreateModal() {
+    setEditingPost(null);
+    setFormSportId(null);
+    setFormTeamId(null);
+    setFormTitle("");
+    setFormSkill("Casual");
+    setFormLocation("");
+    setFormNote("");
+    setFormExpiration(60);
+    setPostMessage("");
+    setShowPostModal(true);
+  }
+
+  function openEditModal(post: MatchPost) {
+    setEditingPost(post);
+    setFormSportId(post.sport_id);
+    setFormTitle(post.title);
+    setFormSkill(post.skill);
+    setFormLocation(post.location || "");
+    setFormNote(post.note || "");
+    setPostMessage("");
+    setShowPostModal(true);
+  }
+
+  function closeModal() {
+    setShowPostModal(false);
+    setEditingPost(null);
+    setPostMessage("");
+  }
+
+  async function handleCreatePost() {
+    if (!formSportId || !formTitle || !formSkill) {
+      setPostMessage("Please fill in required fields");
+      return;
+    }
+
+    setFormSubmitting(true);
+    setPostMessage("");
+
+    try {
+      const res = await fetch(`${API}/posts`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          sport_id: formSportId,
+          team_id: formTeamId || null,
+          title: formTitle,
+          skill: formSkill,
+          location: formLocation || null,
+          note: formNote || null,
+          expires_in_minutes: formExpiration,
+        }),
+      });
+
+      if (res.ok) {
+        const newPost = await res.json();
+        setPosts([newPost, ...posts]);
+        closeModal();
+      } else if (res.status === 401) {
+        setPostMessage("Session expired. Please log in again.");
+        router.push("/login");
+      } else {
+        const err = await res.json();
+        setPostMessage(err.detail || "Failed to create post");
+      }
+    } catch {
+      setPostMessage("Error creating post. Is the backend running?");
+    } finally {
+      setFormSubmitting(false);
+    }
+  }
+
+  async function handleUpdatePost() {
+    if (!editingPost || !formTitle || !formSkill) {
+      setPostMessage("Please fill in required fields");
+      return;
+    }
+
+    setFormSubmitting(true);
+    setPostMessage("");
+
+    try {
+      const res = await fetch(`${API}/posts/${editingPost.id}`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          title: formTitle,
+          skill: formSkill,
+          location: formLocation || null,
+          note: formNote || null,
+        }),
+      });
+
+      if (res.ok) {
+        const updatedPost = await res.json();
+        setPosts(posts.map((p) => (p.id === updatedPost.id ? { ...p, ...updatedPost } : p)));
+        closeModal();
+      } else if (res.status === 401) {
+        setPostMessage("Session expired. Please log in again.");
+        router.push("/login");
+      } else {
+        const err = await res.json();
+        setPostMessage(err.detail || "Failed to update post");
+      }
+    } catch {
+      setPostMessage("Error updating post. Is the backend running?");
+    } finally {
+      setFormSubmitting(false);
+    }
+  }
+
+  async function handleDeletePost(postId: number) {
+    if (!confirm("Are you sure you want to remove this post?")) return;
+
+    try {
+      const res = await fetch(`${API}/posts/${postId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+
+      if (res.ok) {
+        setPosts(posts.filter((p) => p.id !== postId));
+      } else if (res.status === 401) {
+        router.push("/login");
+      }
+    } catch {
+      console.error("Error deleting post");
+    }
+  }
 
   const nearbyRequests = [
     { initials: "MR", name: "Marco R.", desc: "Casual 7v7 — Clark Park turf", tags: ["Soccer", "Casual", "7v7"], time: "5m" },
@@ -135,6 +401,28 @@ export default function OpenMatchDashboard() {
         }
         .nav-btn:hover { color: #a1a1aa; }
         .nav-btn.active { background: #161616; color: #fafafa; font-weight: 600; }
+
+        .modal-overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 100;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .modal-content {
+          background: #0c0c0c; border: 1px solid #1e1e1e; border-radius: 16px;
+          padding: 24px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto;
+        }
+        .form-input {
+          width: 100%; background: #111; border: 1px solid #1e1e1e; border-radius: 8px;
+          padding: 10px 12px; color: #e4e4e7; font-size: 14px; font-family: inherit;
+        }
+        .form-input:focus { outline: none; border-color: #34d399; }
+        .form-input::placeholder { color: #52525b; }
+        .form-label { display: block; font-size: 12px; color: #71717a; margin-bottom: 6px; }
+        .primary-btn {
+          background: linear-gradient(135deg, #047857 0%, #10b981 50%, #34d399 100%);
+          border: none; border-radius: 9px; padding: 10px 20px; font-size: 13px;
+          font-weight: 600; color: #fff; cursor: pointer; font-family: inherit;
+        }
+        .primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
       `}</style>
 
       <div style={{ minHeight: "100vh", background: "#080808", color: "#e4e4e7", fontFamily: "'DM Sans', sans-serif" }}>
@@ -173,7 +461,11 @@ export default function OpenMatchDashboard() {
                 onClick={() => setMenuOpen((o) => !o)}
                 style={{ width: 34, height: 34, borderRadius: "50%", border: "1px solid #222", background: "#111", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#71717a", cursor: "pointer" }}
               >
-                {user ? `${user.first_name[0]}${user.last_name?.[0] ?? ""}` : "?"}
+                {user
+                  ? user.display_name
+                    ? user.display_name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()
+                    : `${user.first_name[0]}${user.last_name?.[0] ?? ""}`
+                  : "?"}
               </div>
 
               {menuOpen && (
@@ -183,7 +475,7 @@ export default function OpenMatchDashboard() {
                     
                     {/* Name */}
                     <div style={{ padding: "8px 12px", fontSize: 12, color: "#3f3f46", borderBottom: "1px solid #1a1a1a", marginBottom: 4 }}>
-                      {user ? `${user.first_name} ${user.last_name ?? ""}`.trim() : "Account"}
+                      {user ? (user.display_name || `${user.first_name} ${user.last_name ?? ""}`.trim()) : "Account"}
                     </div>
 
                     {/* Profile link */}
@@ -218,44 +510,69 @@ export default function OpenMatchDashboard() {
 
               {/* Greeting */}
               <div style={{ marginBottom: 36 }}>
-                <h1 style={{ fontSize: 40, fontWeight: 800, letterSpacing: "-0.04em", color: "#fafafa", lineHeight: 1 }}>Hey, Jordan</h1>
+                <h1 style={{ fontSize: 40, fontWeight: 800, letterSpacing: "-0.04em", color: "#fafafa", lineHeight: 1 }}>
+                  Hey, {user?.first_name || "there"}
+                </h1>
                 <p style={{ marginTop: 10, fontSize: 13, color: "#3f3f46" }}>Ready up per team to let nearby players find you</p>
               </div>
 
               {/* Active posts */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                 <h2 style={{ fontSize: 15, fontWeight: 500, color: "#d4d4d8" }}>Active posts</h2>
-                <button className="ghost-btn">+ New post</button>
+                <button className="ghost-btn" onClick={openCreateModal}>+ New post</button>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 32 }}>
-                {activePosts.map((post) => (
-                  <div key={post.title} className="card" style={{ padding: "20px 22px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 16 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", color: post.sportColor }}>{post.sport}</span>
-                          <span style={{ color: "#222" }}>·</span>
-                          <span style={{ fontSize: 11, color: "#3f3f46" }}>{post.team}</span>
-                        </div>
-                        <h3 style={{ fontSize: 21, fontWeight: 700, letterSpacing: "-0.025em", color: "#fafafa", lineHeight: 1.2 }}>{post.title}</h3>
-                        <p style={{ marginTop: 8, fontSize: 13, color: "#3f3f46", fontStyle: "italic" }}>{post.quote}</p>
-                      </div>
-                      <div style={{ background: "#111", border: "1px solid #1e1e1e", borderRadius: 8, padding: "5px 10px", fontSize: 11, color: "#3f3f46", whiteSpace: "nowrap", alignSelf: "flex-start", flexShrink: 0 }}>
-                        {post.time}
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: "1px solid #161616", paddingTop: 14 }}>
-                      <div style={{ display: "flex", gap: 16, fontSize: 12, color: "#3f3f46" }}>
-                        <span>{post.views} views</span>
-                        <span style={{ color: "#3b82f6" }}>{post.responses} response{post.responses !== 1 ? "s" : ""}</span>
-                      </div>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button className="ghost-btn">Edit</button>
-                        <button className="danger-btn">Remove</button>
-                      </div>
-                    </div>
+                {postsLoading ? (
+                  <div style={{ padding: 40, textAlign: "center", color: "#52525b" }}>Loading posts...</div>
+                ) : posts.length === 0 ? (
+                  <div className="card" style={{ padding: 40, textAlign: "center" }}>
+                    <p style={{ color: "#52525b", marginBottom: 12 }}>No active posts yet</p>
+                    <button className="ghost-btn" onClick={openCreateModal}>Create your first post</button>
                   </div>
-                ))}
+                ) : (
+                  posts.map((post) => {
+                    const sportColor = SPORT_COLORS[post.sport_name] || "#4ade80";
+                    return (
+                      <div key={post.id} className="card" style={{ padding: "20px 22px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 16 }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                              <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", color: sportColor }}>
+                                {post.sport_name.toUpperCase()}
+                              </span>
+                              <span style={{ color: "#222" }}>·</span>
+                              <span style={{ fontSize: 11, color: "#3f3f46" }}>{post.skill}</span>
+                              {post.team_name && (
+                                <>
+                                  <span style={{ color: "#222" }}>·</span>
+                                  <span style={{ fontSize: 11, color: "#60a5fa", fontWeight: 600 }}>{post.team_name}</span>
+                                </>
+                              )}
+                            </div>
+                            <h3 style={{ fontSize: 21, fontWeight: 700, letterSpacing: "-0.025em", color: "#fafafa", lineHeight: 1.2 }}>
+                              {post.title}
+                              {post.location && <span style={{ color: "#71717a" }}> · {post.location}</span>}
+                            </h3>
+                            {post.note && (
+                              <p style={{ marginTop: 8, fontSize: 13, color: "#3f3f46", fontStyle: "italic" }}>
+                                &quot;{post.note}&quot;
+                              </p>
+                            )}
+                          </div>
+                          <div style={{ background: "#111", border: "1px solid #1e1e1e", borderRadius: 8, padding: "5px 10px", fontSize: 11, color: "#3f3f46", whiteSpace: "nowrap", alignSelf: "flex-start", flexShrink: 0 }}>
+                            <TimeRemaining expiresAt={post.expires_at} />
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", borderTop: "1px solid #161616", paddingTop: 14 }}>
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <button className="ghost-btn" onClick={() => openEditModal(post)}>Edit</button>
+                            <button className="danger-btn" onClick={() => handleDeletePost(post.id)}>Remove</button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
 
               {/* Recent matches */}
@@ -393,6 +710,135 @@ export default function OpenMatchDashboard() {
           </div>
         </main>
       </div>
+
+      {/* ── Post Modal ── */}
+      {showPostModal && (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: "#fafafa", marginBottom: 20 }}>
+              {editingPost ? "Edit Post" : "Create New Post"}
+            </h2>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {!editingPost && (
+                <>
+                  <div>
+                    <label className="form-label">Sport *</label>
+                    <select
+                      className="form-input"
+                      value={formSportId ?? ""}
+                      onChange={(e) => setFormSportId(e.target.value ? Number(e.target.value) : null)}
+                    >
+                      <option value="">Select a sport...</option>
+                      {sports.map((sport) => (
+                        <option key={sport.id} value={sport.id}>{sport.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {teams.length > 0 && (
+                    <div>
+                      <label className="form-label">Post as Team (optional)</label>
+                      <select
+                        className="form-input"
+                        value={formTeamId ?? ""}
+                        onChange={(e) => setFormTeamId(e.target.value ? Number(e.target.value) : null)}
+                      >
+                        <option value="">Post as myself</option>
+                        {teams.map((team) => (
+                          <option key={team.id} value={team.id}>{team.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div>
+                <label className="form-label">Title *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g., Intermediate 5v5"
+                  value={formTitle}
+                  onChange={(e) => setFormTitle(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="form-label">Skill Level *</label>
+                <select
+                  className="form-input"
+                  value={formSkill}
+                  onChange={(e) => setFormSkill(e.target.value)}
+                >
+                  {SKILL_LEVELS.map((level) => (
+                    <option key={level} value={level}>{level}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="form-label">Location</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g., FDR Park"
+                  value={formLocation}
+                  onChange={(e) => setFormLocation(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="form-label">Note / Message</label>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  placeholder="Add a message for other players..."
+                  value={formNote}
+                  onChange={(e) => setFormNote(e.target.value)}
+                  style={{ resize: "none" }}
+                />
+              </div>
+
+              {!editingPost && (
+                <div>
+                  <label className="form-label">Expires In</label>
+                  <select
+                    className="form-input"
+                    value={formExpiration}
+                    onChange={(e) => setFormExpiration(Number(e.target.value))}
+                  >
+                    {EXPIRATION_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {postMessage && (
+                <p style={{ fontSize: 13, color: postMessage.includes("expired") ? "#ef4444" : "#ef4444" }}>
+                  {postMessage}
+                </p>
+              )}
+
+              <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+                <button
+                  className="primary-btn"
+                  style={{ flex: 1 }}
+                  disabled={formSubmitting}
+                  onClick={editingPost ? handleUpdatePost : handleCreatePost}
+                >
+                  {formSubmitting ? "Saving..." : editingPost ? "Save Changes" : "Create Post"}
+                </button>
+                <button className="ghost-btn" onClick={closeModal}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
