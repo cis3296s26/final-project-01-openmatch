@@ -199,6 +199,8 @@ class MatchPostUpdate(BaseModel):
     skill: Optional[str] = Field(default=None, max_length=50)
     location: Optional[str] = Field(default=None, max_length=100)
     note: Optional[str] = Field(default=None, max_length=500)
+class ProfileSportCreate(BaseModel):
+    sport_id: int
 
 
 def init_db() -> None:
@@ -308,7 +310,7 @@ def health():
 
 
 @app.post("/users", status_code=201)
-def create_user(payload: UserCreate):
+async def create_user(payload: UserCreate):
     try:
         with engine.begin() as conn:
             row = conn.execute(
@@ -328,48 +330,88 @@ def create_user(payload: UserCreate):
                 },
             ).mappings().one()
 
-            plaintext_token = secrets.token_urlsafe(32)
-            hashed_token = hashlib.sha256(plaintext_token.encode()).hexdigest()
-            verify_url = f"{FRONTEND_URL}/login/verify?token={plaintext_token}"
-
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
-                    VALUES (:user_id, :token_hash, :expires_at)
-                    """
-                ),
-                {
-                    "user_id": row["id"],
-                    "token_hash": hashed_token,
-                    "expires_at": datetime.now(timezone.utc) + timedelta(hours=24),
-                },
-            )
-
-        email_html = f"""
-        <p>Welcome to OpenMatch.</p>
-        <p>Please verify your email by clicking the link below:</p>
-        <p><a href="{verify_url}">Verify Email</a></p>
-        <p>{verify_url}</p>
-        """
-
-        try:
-            send_email(
-                to=row["email"],
-                subject="Openmatch Email Verification",
-                body=email_html
-            )
-        except Exception as e:
-            print(f"EMAIL FAILED: {e}. Is this intentional?")
-
-        # Print verification email contents to console if MAIL_USERNAME is not defined (For development)
-        if not MAIL_SENDER:
-            print(email_html)
+            await create_and_send_verification_email(row, conn)
 
         return dict(row)
     except IntegrityError:
         raise HTTPException(status_code=400, detail="Email or username already exists")
 
+async def create_and_send_verification_email(row: map, conn):
+    # Token generation
+    plaintext_token = secrets.token_urlsafe(32)
+    hashed_token = hashlib.sha256(plaintext_token.encode()).hexdigest()
+    verify_url = f"{FRONTEND_URL}/login/verify?token={plaintext_token}"
+
+    # Insert the new email token into the database
+    conn.execute(
+        text(
+            """
+            INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
+            VALUES (:user_id, :token_hash, :expires_at)
+            """
+        ),
+        {
+            "user_id": row["id"],
+            "token_hash": hashed_token,
+            "expires_at": datetime.now(timezone.utc) + timedelta(hours=24),
+        },
+    )
+
+    # Email Formatting
+    email_html = f"""
+    <p>Welcome to OpenMatch.</p>
+    <p>Please verify your email by clicking the link below:</p>
+    <p><a href="{verify_url}">Verify Email</a></p>
+    <p>{verify_url}</p>
+    """
+
+    # Try to send the email
+    try:
+        send_email(
+            to=row["email"],
+            subject="Openmatch Email Verification",
+            body=email_html
+        )
+    except Exception as e:
+        print(f"EMAIL FAILED: {e}. Is this intentional?")
+
+    # Print verification email contents to console if MAIL_USERNAME is not defined (For development)
+    if not MAIL_SENDER:
+        print(email_html)
+
+@app.post("/resendVerification")
+async def resetAndSendToken(payload: UserLogin):
+    # Get the user's information
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT id, first_name, last_name, email, username
+                FROM users
+                WHERE email = :login OR username = :login
+                """
+            ),
+            {"login": payload.login.lower()}
+        ).mappings().first()
+
+        # Catch if user does not exist
+        if not row:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+
+        # Clear all existing tokens for this user
+        conn.execute(
+            text(
+                """
+                DELETE FROM email_verification_tokens WHERE user_id= :user_id
+                """
+            ),
+            {
+                "user_id": row["id"] 
+            }
+        )
+
+        # Create the token, add it to the database, and send it
+        await create_and_send_verification_email(row, conn)
 
 @app.get("/verify")
 def verify_email(token: str):
@@ -515,6 +557,110 @@ def list_sports():
             text("SELECT id, name FROM sports WHERE is_active = TRUE ORDER BY name")
         ).mappings().all()
     return [dict(row) for row in rows]
+
+
+@app.get("/users/{user_id}/profile-sports")
+def get_user_profile_sports(user_id: int, current_user: dict = Depends(get_current_user)):
+    with engine.begin() as conn:
+        profile = conn.execute(
+            text("SELECT id FROM profiles WHERE user_id = :user_id"),
+            {"user_id": user_id}
+        ).mappings().first()
+
+        if not profile:
+            return []
+
+        rows = conn.execute(
+            text(
+                """
+                SELECT ps.id, ps.profile_id, ps.sport_id, s.name as sport_name,
+                       ps.mmr, ps.matches_played, ps.wins, ps.losses,
+                       ps.placement_matches_remaining, ps.rank_tier,
+                       ps.created_at, ps.updated_at
+                FROM profile_sports ps
+                JOIN sports s ON s.id = ps.sport_id
+                WHERE ps.profile_id = :profile_id
+                ORDER BY s.name
+                """
+            ),
+            {"profile_id": profile["id"]}
+        ).mappings().all()
+
+    return [dict(row) for row in rows]
+
+
+@app.post("/profile-sports", status_code=201)
+def create_profile_sport(payload: ProfileSportCreate, current_user: dict = Depends(get_current_user)):
+    user_id = int(current_user["sub"])
+
+    try:
+        with engine.begin() as conn:
+            profile = conn.execute(
+                text("SELECT id FROM profiles WHERE user_id = :user_id"),
+                {"user_id": user_id}
+            ).mappings().first()
+
+            if not profile:
+                raise HTTPException(status_code=400, detail="Profile not found. Please create a profile first.")
+
+            sport = conn.execute(
+                text("SELECT id, name FROM sports WHERE id = :sport_id AND is_active = TRUE"),
+                {"sport_id": payload.sport_id}
+            ).mappings().first()
+
+            if not sport:
+                raise HTTPException(status_code=400, detail="Sport not found")
+
+            row = conn.execute(
+                text(
+                    """
+                    INSERT INTO profile_sports (profile_id, sport_id)
+                    VALUES (:profile_id, :sport_id)
+                    RETURNING id, profile_id, sport_id, mmr, matches_played, wins, losses,
+                              placement_matches_remaining, rank_tier, created_at, updated_at
+                    """
+                ),
+                {
+                    "profile_id": profile["id"],
+                    "sport_id": payload.sport_id,
+                }
+            ).mappings().one()
+
+        result = dict(row)
+        result["sport_name"] = sport["name"]
+        return result
+    except IntegrityError:
+        raise HTTPException(status_code=400, detail="Sport already added to profile")
+
+
+@app.delete("/profile-sports/{profile_sport_id}")
+def delete_profile_sport(profile_sport_id: int, current_user: dict = Depends(get_current_user)):
+    user_id = int(current_user["sub"])
+
+    with engine.begin() as conn:
+        profile = conn.execute(
+            text("SELECT id FROM profiles WHERE user_id = :user_id"),
+            {"user_id": user_id}
+        ).mappings().first()
+
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+
+        result = conn.execute(
+            text(
+                """
+                DELETE FROM profile_sports
+                WHERE id = :profile_sport_id AND profile_id = :profile_id
+                RETURNING id
+                """
+            ),
+            {"profile_sport_id": profile_sport_id, "profile_id": profile["id"]}
+        ).mappings().first()
+
+        if not result:
+            raise HTTPException(status_code=404, detail="Sport profile not found or not owned by user")
+
+    return {"message": "Sport removed from profile"}
 
 
 @app.post("/login")

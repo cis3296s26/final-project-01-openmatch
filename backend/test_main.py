@@ -208,6 +208,33 @@ def test_login_email_not_verified(mock_engine):
         "detail": "Please verify your email before signing in",
     }
 
+# Test verification endpoint sends correctly for found user
+@patch("main.engine")
+def test_resending_endpoint(mock_engine):
+    from main import pwd_context
+
+    fake_row = {
+        "id": 1,
+        "first_name": "Test",
+        "last_name": "User",
+        "email": "testuser@example.com",
+        "username": "testuser",
+        "password_hash": pwd_context.hash("testpassword"),
+        "email_verified": False,
+    }
+
+    fake_engine = _mock_begin_with_row(fake_row, method="first")
+    mock_engine.begin = fake_engine.begin
+
+    response = client.post(
+        "/resendVerification",
+        json = {
+            "login": "testuser",
+            "password": "testpassword"
+        }
+    )
+
+    assert response.status_code == 200
 
 # ==== TESTS FOR GET ENDPOINTS ====
 
