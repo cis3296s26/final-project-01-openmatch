@@ -7,6 +7,7 @@ export type User = {
     last_name: string;
     email: string;
     username: string;
+    display_name?: string | null;
 };
 
 export type AuthResponse = {
@@ -34,6 +35,13 @@ export function getUser(): User | null {
 export function clearAuth(): void {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+}
+
+export function updateUser(updates: Partial<User>): void {
+    const user = getUser();
+    if (user) {
+        localStorage.setItem(USER_KEY, JSON.stringify({ ...user, ...updates }));
+    }
 }
 
 export function isAuthenticated(): boolean {

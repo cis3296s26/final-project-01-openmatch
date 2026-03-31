@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { getUser, clearAuth, authHeaders } from "@/lib/auth";
-import { useRouter } from "next/navigation";
+import { authHeaders, clearAuth, getUser } from "@/lib/auth";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
@@ -81,13 +81,18 @@ function TimeRemaining({ expiresAt }: { expiresAt: string }) {
   const [timeLeft, setTimeLeft] = useState<string>("--");
 
   useEffect(() => {
-    setTimeLeft(getTimeRemaining(expiresAt));
+    const frameId = requestAnimationFrame(() => {
+      setTimeLeft(getTimeRemaining(expiresAt));
+    });
     
     const interval = setInterval(() => {
       setTimeLeft(getTimeRemaining(expiresAt));
     }, 60000);
     
-    return () => clearInterval(interval);
+    return () => {
+      cancelAnimationFrame(frameId);
+      clearInterval(interval);
+    };
   }, [expiresAt]);
 
   return <>{timeLeft}</>;
@@ -96,7 +101,7 @@ function TimeRemaining({ expiresAt }: { expiresAt: string }) {
 export default function OpenMatchDashboard() {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
-  const user = getUser();
+  const [user, setUser] = useState<ReturnType<typeof getUser>>(null);
 
   const [posts, setPosts] = useState<MatchPost[]>([]);
   const [sports, setSports] = useState<Sport[]>([]);
@@ -130,10 +135,12 @@ export default function OpenMatchDashboard() {
   }
 
   useEffect(() => {
+    const currentUser = getUser();
+    setUser(currentUser);
     fetchSports();
     fetchTeams();
-    if (user) {
-      fetchUserPosts(user.id);
+    if (currentUser) {
+      fetchUserPosts(currentUser.id);
     }
   }, []);
 
@@ -454,7 +461,11 @@ export default function OpenMatchDashboard() {
                 onClick={() => setMenuOpen((o) => !o)}
                 style={{ width: 34, height: 34, borderRadius: "50%", border: "1px solid #222", background: "#111", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#71717a", cursor: "pointer" }}
               >
-                {user ? `${user.first_name[0]}${user.last_name?.[0] ?? ""}` : "?"}
+                {user
+                  ? user.display_name
+                    ? user.display_name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()
+                    : `${user.first_name[0]}${user.last_name?.[0] ?? ""}`
+                  : "?"}
               </div>
 
               {menuOpen && (
@@ -464,7 +475,7 @@ export default function OpenMatchDashboard() {
                     
                     {/* Name */}
                     <div style={{ padding: "8px 12px", fontSize: 12, color: "#3f3f46", borderBottom: "1px solid #1a1a1a", marginBottom: 4 }}>
-                      {user ? `${user.first_name} ${user.last_name ?? ""}`.trim() : "Account"}
+                      {user ? (user.display_name || `${user.first_name} ${user.last_name ?? ""}`.trim()) : "Account"}
                     </div>
 
                     {/* Profile link */}

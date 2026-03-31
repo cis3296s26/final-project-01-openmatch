@@ -255,8 +255,6 @@ def init_db() -> None:
                     city TEXT NOT NULL
                 );
 
-                DROP TABLE IF EXISTS match_posts CASCADE;
-
                 CREATE TABLE IF NOT EXISTS match_posts (
                     id SERIAL PRIMARY KEY,
                     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -525,9 +523,11 @@ def login(payload: UserLogin):
         row = conn.execute(
             text(
                 """
-                SELECT id, first_name, last_name, email, username, password_hash, email_verified
-                FROM users
-                WHERE email = :login OR username = :login
+                SELECT u.id, u.first_name, u.last_name, u.email, u.username, u.password_hash, u.email_verified,
+                       p.display_name
+                FROM users u
+                LEFT JOIN profiles p ON p.user_id = u.id
+                WHERE u.email = :login OR u.username = :login
                 """
             ),
             {"login": payload.login.lower()}
@@ -559,7 +559,8 @@ def login(payload: UserLogin):
             "first_name": row["first_name"],
             "last_name": row["last_name"],
             "email": row["email"],
-            "username": row["username"]
+            "username": row["username"],
+            "display_name": row["display_name"]
         }
     }
 

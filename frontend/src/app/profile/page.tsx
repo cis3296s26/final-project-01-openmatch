@@ -1,6 +1,6 @@
 "use client";
 
-import { authHeaders, getUser, isAuthenticated } from "@/lib/auth";
+import { authHeaders, getUser, isAuthenticated, updateUser } from "@/lib/auth";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -81,6 +81,7 @@ export default function ProfilePage() {
                 setMessage("Profile saved successfully!");
                 setHasProfile(true);
                 setIsEditing(false);
+                updateUser({ display_name: name });
             } else if (res.status === 401) {
                 setMessage("Session expired. Please log in again.");
                 router.push("/login");
