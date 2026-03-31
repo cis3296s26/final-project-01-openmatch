@@ -39,7 +39,7 @@ export default function RegisterPage() {
         try{
             await registerUser(formData);
             toast.success("User registered successfully");
-            router.push("/");
+            router.push("../dashboard");
         } 
         catch (err) {
             console.error(err);

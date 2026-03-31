@@ -42,7 +42,7 @@ export default function LoginPage() {
             const authResponse = await loginUser(formData);
             saveAuth(authResponse);
             toast.success("Logged in successfully");
-            router.push("/");
+            router.push("../dashboard");
         } catch (err) {
             console.error(err);
             toast.error(err instanceof Error ? err.message : "Failed to Login");
@@ -51,6 +51,7 @@ export default function LoginPage() {
 
     async function loginUser(data: LoginInput): Promise<AuthResponse> {
         const res = await fetch(`${API}/login`, {
+            
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(data),
