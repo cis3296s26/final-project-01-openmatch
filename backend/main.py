@@ -253,7 +253,7 @@ def init_db() -> None:
                 CREATE TABLE IF NOT EXISTS teams (
                     id SERIAL PRIMARY KEY,
                     name TEXT NOT NULL,
-                    sport TEXT NOT NULL,
+                    sport_id INT NOT NULL REFERENCES sports(id),
                     city TEXT NOT NULL
                 );
 
