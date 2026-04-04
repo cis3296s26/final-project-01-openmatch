@@ -261,6 +261,7 @@ def init_db() -> None:
                     id SERIAL PRIMARY KEY,
                     team_id INT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
                     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    sport_id INT NOT NULL REFERENCES sports(id),
                     role TEXT NOT NULL DEFAULT 'member',
                     joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     UNIQUE(team_id, user_id),
