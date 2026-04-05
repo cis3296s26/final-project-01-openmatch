@@ -1,0 +1,530 @@
+"use client";
+
+import { authHeaders, clearAuth, getUser } from "@/lib/auth";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+
+const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
+
+// Team type: what information are we collecting from each team
+type Team = {
+  id: number;
+  name: string;
+  sport: string;
+  sport_id: number;
+  city: string;
+  member_count: number;
+  rank?: string;
+  is_member: boolean;
+  is_open: boolean;
+};
+
+export default function MyTeamsPage() {
+  const router = useRouter();
+  // menuOpen - handles opening the user logout/profile dropdown from the header
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [user, setUser] = useState<ReturnType<typeof getUser>>(null);
+
+  // list of user teams and available teams. Teamloaading should be true while these are being grabbed
+  const [myTeams, setMyTeams] = useState<Team[]>([]);
+  const [availableTeams, setAvailableTeams] = useState<Team[]>([]);
+  const [teamsLoading, setTeamsLoading] = useState(true);
+
+  // For leaving and joining teams
+  const [joiningTeamId, setJoiningTeamId] = useState<number | null>(null);
+  const [leavingTeamId, setLeavingTeamId] = useState<number | null>(null);
+  const [actionMessage, setActionMessage] = useState<{ id: number; text: string; success: boolean } | null>(null);
+
+  // For sport searching list
+  const [sportFilter, setSportFilter] = useState<string>("All");
+  const [searchQuery, setSearchQuery] = useState("");
+
+
+  // Handlers
+  function handleLogout() {
+    clearAuth();
+    router.push("../login");
+  }
+
+  useEffect(() => {
+    const currentUser = getUser();
+    setUser(currentUser);
+    if (currentUser) {
+      fetchTeams(currentUser.id);
+    }
+  }, []);
+
+  async function fetchTeams(userId: number) {
+    setTeamsLoading(true);
+
+    // Mock data — remove when real endpoints are ready
+    setMyTeams([
+      { id: 1, name: "Broad St Ballers", sport: "Soccer", sport_id: 1, city: "Philadelphia", member_count: 9, rank: "Gold II", is_member: true, is_open: true },
+      { id: 2, name: "The Rim Breakers", sport: "Basketball", sport_id: 2, city: "Philadelphia", member_count: 5, rank: "Silver I", is_member: true, is_open: false },
+    ]);
+    setAvailableTeams([
+      { id: 3, name: "Fishtown FC", sport: "Soccer", sport_id: 3, city: "Philadelphia", member_count: 11, is_member: false, is_open: true },
+      { id: 4, name: "Sunrise Picklers", sport: "Pickleball", sport_id: 4, city: "Philadelphia", member_count: 6, is_member: false, is_open: true },
+      { id: 5, name: "South Street Squad", sport: "Volleyball", sport_id: 5, city: "Philadelphia", member_count: 8, is_member: false, is_open: true },
+    ]);
+
+    setTeamsLoading(false);
+  }
+
+  // Real function for grabbing teams from the API
+  // async function fetchTeams(userId: number) {
+  //   setTeamsLoading(true);
+  //   try {
+  //     const [memberRes, allRes] = await Promise.all([
+  //       fetch(`${API}/users/${userId}/teams`, { headers: authHeaders() }),
+  //       fetch(`${API}/teams`),
+  //     ]);
+
+  //     let memberTeamIds: Set<number> = new Set();
+
+  //     if (memberRes.ok) {
+  //       const memberData: Team[] = await memberRes.json();
+  //       memberTeamIds = new Set(memberData.map((t) => t.id));
+  //       setMyTeams(memberData.map((t) => ({ ...t, is_member: true })));
+  //     }
+
+  //     if (allRes.ok) {
+  //       const allData: Team[] = await allRes.json();
+  //       setAvailableTeams(
+  //         allData
+  //           .filter((t) => !memberTeamIds.has(t.id) && t.is_open)
+  //           .map((t) => ({ ...t, is_member: false }))
+  //       );
+  //     }
+  //   } catch (err) {
+  //     console.error("Failed to fetch teams:", err);
+  //   } finally {
+  //     setTeamsLoading(false);
+  //   }
+  // }
+
+  async function handleJoinTeam(teamId: number) {
+    setJoiningTeamId(teamId);
+    setActionMessage(null);
+    try {
+      // TODO: Team joining API
+      const res = await fetch(`${API}/teams/${teamId}/join`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+
+      if (res.ok) {
+        const joined = availableTeams.find((t) => t.id === teamId);
+        if (joined) {
+          setMyTeams((prev) => [...prev, { ...joined, is_member: true }]);
+          setAvailableTeams((prev) => prev.filter((t) => t.id !== teamId));
+        }
+        setActionMessage({ id: teamId, text: "You've joined the team!", success: true });
+      } else if (res.status === 401) {
+        router.push("/login");
+      } else {
+        const err = await res.json();
+        setActionMessage({ id: teamId, text: err.detail || "Failed to join team.", success: false });
+      }
+    } catch {
+      setActionMessage({ id: teamId, text: "Error joining team. Is the backend running?", success: false });
+    } finally {
+      setJoiningTeamId(null);
+    }
+  }
+
+  async function handleLeaveTeam(teamId: number) {
+    setLeavingTeamId(teamId);
+    setActionMessage(null);
+    try {
+      // TODO: add leave api request and handle the results
+      const res = await fetch(`${API}/teams/${teamId}/leave`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+
+      if (res.ok) {
+        const left = myTeams.find((t) => t.id === teamId);
+        if (left) {
+          setMyTeams((prev) => prev.filter((t) => t.id !== teamId));
+          if (left.is_open) {
+            setAvailableTeams((prev) => [...prev, { ...left, is_member: false }]);
+          }
+        }
+      } else if (res.status === 401) {
+        router.push("/login");
+      }
+
+    } catch {
+      console.error("Error leaving team");
+    } finally {
+      setLeavingTeamId(null);
+    }
+  }
+
+  // Derived Data
+  const allSports = Array.from(
+    new Set([...myTeams, ...availableTeams].map((t) => t.sport))
+  ).sort();
+
+  const filteredAvailable = availableTeams.filter((t) => {
+    const matchesSport = sportFilter === "All" || t.sport === sportFilter;
+    const matchesSearch =
+      searchQuery === "" ||
+      t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.sport.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.city.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesSport && matchesSearch;
+  });
+
+  // Return the team's initials
+  function TeamInitials({ name }: { name: string }) {
+    return <>{name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}</>;
+  }
+
+  // Create a unique color based on the sport's id
+  function getSportColor(sportId: number): string {
+    const hue = (sportId * 137) % 360; // 137 is the golden angle — spreads colors evenly
+    return `hsl(${hue}, 70%, 65%)`;
+  }
+
+  // Main Component
+  return (
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        .card { background: #0c0c0c; border: 1px solid #191919; border-radius: 18px; box-shadow: 0 8px 40px rgba(0,0,0,0.55); }
+
+        .ghost-btn {
+          background: transparent; border: 1px solid #1e1e1e; border-radius: 9px;
+          padding: 6px 14px; font-size: 12px; color: #52525b; cursor: pointer;
+          font-family: 'DM Sans', sans-serif; transition: border-color 0.15s, color 0.15s;
+        }
+        .ghost-btn:hover { border-color: #2e2e2e; color: #a1a1aa; }
+
+        .danger-btn {
+          background: rgba(239,68,68,0.04); border: 1px solid rgba(239,68,68,0.16);
+          border-radius: 9px; padding: 6px 14px; font-size: 12px; color: #ef4444;
+          cursor: pointer; font-family: 'DM Sans', sans-serif; transition: background 0.15s;
+        }
+        .danger-btn:hover { background: rgba(239,68,68,0.08); }
+        .danger-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .join-btn {
+          background: linear-gradient(135deg, #047857 0%, #10b981 50%, #34d399 100%);
+          border: none; border-radius: 9px; padding: 6px 16px; font-size: 12px;
+          font-weight: 600; color: #fff; cursor: pointer; font-family: inherit;
+          transition: opacity 0.15s;
+        }
+        .join-btn:hover { opacity: 0.88; }
+        .join-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .nav-btn {
+          background: transparent; border: none; border-radius: 10px; padding: 6px 14px;
+          font-size: 13px; color: #52525b; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s;
+          text-decoration: none; display: inline-block;
+        }
+        .nav-btn:hover { color: #a1a1aa; }
+        .nav-btn.active { background: #161616; color: #fafafa; font-weight: 600; }
+
+        .filter-btn {
+          background: transparent; border: 1px solid #1e1e1e; border-radius: 8px;
+          padding: 5px 12px; font-size: 11px; color: #52525b; cursor: pointer;
+          font-family: 'DM Sans', sans-serif; transition: all 0.15s; white-space: nowrap;
+        }
+        .filter-btn:hover { border-color: #2e2e2e; color: #a1a1aa; }
+        .filter-btn.active { background: #161616; border-color: #2e2e2e; color: #d4d4d8; }
+
+        .search-input {
+          background: #0f0f0f; border: 1px solid #1e1e1e; border-radius: 10px;
+          padding: 8px 14px; color: #e4e4e7; font-size: 13px; font-family: inherit;
+          width: 220px; transition: border-color 0.15s;
+        }
+        .search-input:focus { outline: none; border-color: #34d399; }
+        .search-input::placeholder { color: #3f3f46; }
+
+        .team-card {
+          background: #0c0c0c; border: 1px solid #191919; border-radius: 16px;
+          padding: 16px 18px; box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+          transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .team-card:hover { border-color: #222; }
+
+        .sport-dot {
+          width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 1px;
+        }
+      `}</style>
+
+      <div style={{ minHeight: "100vh", background: "#080808", color: "#e4e4e7", fontFamily: "'DM Sans', sans-serif" }}>
+
+        {/* ── Header ── */}
+        <header style={{ borderBottom: "1px solid #141414", background: "rgba(8,8,8,0.97)", backdropFilter: "blur(14px)", position: "sticky", top: 0, zIndex: 50 }}>
+          <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 28px", height: 54, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 30, height: 30, borderRadius: 8, background: "#34d399", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11, color: "#080808", boxShadow: "0 0 18px rgba(52,211,153,0.35)" }}>
+                  OM
+                </div>
+                <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.025em", color: "#fafafa" }}>OpenMatch</span>
+              </div>
+              <nav style={{ display: "flex", gap: 2 }}>
+                {[
+                  { label: "Dashboard", href: "/dashboard" },
+                  { label: "Find a Match", href: "/find-a-match" },
+                  { label: "My Teams", href: "/my-teams" },
+                  { label: "Fields", href: "/fields" },
+                  { label: "Profile", href: "/profile" },
+                ].map((item) => (
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    className={`nav-btn${item.label === "My Teams" ? " active" : ""}`}
+                    style={{ textDecoration: "none" }}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </nav>
+            </div>
+
+            <div style={{ position: "relative" }}>
+              <div
+                onClick={() => setMenuOpen((o) => !o)}
+                style={{ width: 34, height: 34, borderRadius: "50%", border: "1px solid #222", background: "#111", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#71717a", cursor: "pointer" }}
+              >
+                {user
+                  ? user.display_name
+                    ? user.display_name.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()
+                    : `${user.first_name[0]}${user.last_name?.[0] ?? ""}`
+                  : "?"}
+              </div>
+
+              {menuOpen && (
+                <>
+                  <div onClick={() => setMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                  <div style={{ position: "absolute", top: 42, right: 0, zIndex: 50, background: "#0f0f0f", border: "1px solid #222", borderRadius: 12, padding: "6px", minWidth: 160, boxShadow: "0 16px 40px rgba(0,0,0,0.6)" }}>
+                    <div style={{ padding: "8px 12px", fontSize: 12, color: "#3f3f46", borderBottom: "1px solid #1a1a1a", marginBottom: 4 }}>
+                      {user ? (user.display_name || `${user.first_name} ${user.last_name ?? ""}`.trim()) : "Account"}
+                    </div>
+                    <Link
+                      href="../profile"
+                      onClick={() => setMenuOpen(false)}
+                      style={{ display: "block", padding: "8px 12px", fontSize: 13, color: "#a1a1aa", borderRadius: 8, textDecoration: "none" }}
+                    >
+                      Profile
+                    </Link>
+                    <button
+                      onClick={handleLogout}
+                      style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", padding: "8px 12px", fontSize: 13, color: "#ef4444", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}
+                    >
+                      Log out
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* ── Main content ── */}
+        <main style={{ maxWidth: 1280, margin: "0 auto", padding: "36px 28px" }}>
+
+          {/* Page heading */}
+          <div style={{ marginBottom: 36 }}>
+            <h1 style={{ fontSize: 40, fontWeight: 800, letterSpacing: "-0.04em", color: "#fafafa", lineHeight: 1 }}>
+              My Teams
+            </h1>
+            <p style={{ marginTop: 10, fontSize: 13, color: "#3f3f46" }}>
+              Manage your memberships and discover new teams to join
+            </p>
+          </div>
+
+          {teamsLoading ? (
+            <div style={{ padding: 80, textAlign: "center", color: "#52525b" }}>Loading teams...</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 48 }}>
+
+              {/* ── TOP: My Teams ── */}
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                  <h2 style={{ fontSize: 15, fontWeight: 500, color: "#d4d4d8" }}>My teams</h2>
+                  <span style={{ fontSize: 11, color: "#3f3f46" }}>
+                    {myTeams.length} {myTeams.length === 1 ? "team" : "teams"}
+                  </span>
+                </div>
+
+                {myTeams.length === 0 ? (
+                  <div className="card" style={{ padding: 48, textAlign: "center" }}>
+                    <div style={{ fontSize: 28, marginBottom: 12 }}>🏅</div>
+                    <p style={{ color: "#52525b", fontSize: 13 }}>You haven't joined any teams yet.</p>
+                    <p style={{ color: "#3f3f46", fontSize: 12, marginTop: 4 }}>Browse available teams on the right to get started.</p>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {myTeams.map((team) => {
+                      const sportColor = getSportColor(team.sport_id) || "#71717a";
+                      return (
+                        <div key={team.id} className="team-card">
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                              {/* Team avatar */}
+                              <div style={{ width: 36, height: 36, borderRadius: 10, background: "#111", border: "1px solid #1e1e1e", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "#52525b", flexShrink: 0 }}>
+                                <TeamInitials name={team.name} />
+                              </div>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: "#e4e4e7", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {team.name}
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
+                                  <span className="sport-dot" style={{ background: sportColor }} />
+                                  <span style={{ fontSize: 11, color: "#3f3f46" }}>
+                                    {team.sport} · {team.city} · {team.member_count} member{team.member_count !== 1 ? "s" : ""}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                            {team.rank && (
+                              <span style={{ padding: "3px 9px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "rgba(96,165,250,0.07)", border: "1px solid rgba(96,165,250,0.16)", color: "#93c5fd", flexShrink: 0 }}>
+                                {team.rank}
+                              </span>
+                            )}
+                          </div>
+
+                          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                            <Link
+                              href={`/teams/${team.id}`}
+                              className="ghost-btn"
+                              style={{ textDecoration: "none" }}
+                            >
+                              View
+                            </Link>
+                            <button
+                              className="danger-btn"
+                              disabled={leavingTeamId === team.id}
+                              onClick={() => handleLeaveTeam(team.id)}
+                            >
+                              {leavingTeamId === team.id ? "Leaving..." : "Leave"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* ── BOTTOM: Available Teams ── */}
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                  <h2 style={{ fontSize: 15, fontWeight: 500, color: "#d4d4d8" }}>Available teams</h2>
+                  <span style={{ fontSize: 11, color: "#3f3f46" }}>
+                    {filteredAvailable.length} open
+                  </span>
+                </div>
+
+                {/* Filters */}
+                <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+                  <input
+                    type="text"
+                    className="search-input"
+                    placeholder="Search teams..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  <button
+                    className={`filter-btn${sportFilter === "All" ? " active" : ""}`}
+                    onClick={() => setSportFilter("All")}
+                  >
+                    All
+                  </button>
+                  {allSports.map((sport) => (
+                    <button
+                      key={sport}
+                      className={`filter-btn${sportFilter === sport ? " active" : ""}`}
+                      onClick={() => setSportFilter(sport)}
+                    >
+                      {sport}
+                    </button>
+                  ))}
+                </div>
+
+                {filteredAvailable.length === 0 ? (
+                  <div className="card" style={{ padding: 48, textAlign: "center" }}>
+                    <div style={{ fontSize: 28, marginBottom: 12 }}>🔍</div>
+                    <p style={{ color: "#52525b", fontSize: 13 }}>
+                      {availableTeams.length === 0
+                        ? "No open teams available right now."
+                        : "No teams match your filters."}
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {filteredAvailable.map((team) => {
+                      const sportColor = getSportColor(team.sport_id) || "#71717a";
+                      const isJoining = joiningTeamId === team.id;
+                      const wasActioned = actionMessage?.id === team.id;
+                      return (
+                        <div key={team.id} className="team-card">
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                              {/* Team avatar */}
+                              <div style={{ width: 36, height: 36, borderRadius: 10, background: "#111", border: "1px solid #1e1e1e", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "#52525b", flexShrink: 0 }}>
+                                <TeamInitials name={team.name} />
+                              </div>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: "#e4e4e7", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {team.name}
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
+                                  <span className="sport-dot" style={{ background: sportColor }} />
+                                  <span style={{ fontSize: 11, color: "#3f3f46" }}>
+                                    {team.sport} · {team.city} · {team.member_count} member{team.member_count !== 1 ? "s" : ""}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                            {/* Open badge */}
+                            <span style={{ padding: "3px 9px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "rgba(52,211,153,0.06)", border: "1px solid rgba(52,211,153,0.16)", color: "#6ee7b7", flexShrink: 0 }}>
+                              Open
+                            </span>
+                          </div>
+
+                          {wasActioned && actionMessage && (
+                            <p style={{ fontSize: 11, color: actionMessage.success ? "#34d399" : "#ef4444", marginBottom: 10 }}>
+                              {actionMessage.text}
+                            </p>
+                          )}
+
+                          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                            <Link
+                              href={`/teams/${team.id}`}
+                              className="ghost-btn"
+                              style={{ textDecoration: "none" }}
+                            >
+                              View
+                            </Link>
+                            <button
+                              className="join-btn"
+                              disabled={isJoining}
+                              onClick={() => handleJoinTeam(team.id)}
+                            >
+                              {isJoining ? "Joining..." : "Join"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+            </div>
+          )}
+        </main>
+      </div>
+    </>
+  );
+}
