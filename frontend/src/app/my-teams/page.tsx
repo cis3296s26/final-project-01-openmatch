@@ -20,6 +20,13 @@ type Team = {
   is_open: boolean;
 };
 
+// Sport Type
+type Sport = {
+  id: number;
+  name: string;
+};
+
+
 export default function MyTeamsPage() {
   const router = useRouter();
   // menuOpen - handles opening the user logout/profile dropdown from the header
@@ -39,7 +46,16 @@ export default function MyTeamsPage() {
   // For sport searching list
   const [sportFilter, setSportFilter] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sports, setSports] = useState<Sport[]>([]);
 
+  // Forms for team creation
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [formName, setFormName] = useState("");
+  const [formSport, setFormSport] = useState("");
+  const [formCity, setFormCity] = useState("");
+  const [formIsOpen, setFormIsOpen] = useState(true);
+  const [formSubmitting, setFormSubmitting] = useState(false);
+  const [formMessage, setFormMessage] = useState("");
 
   // Handlers
   function handleLogout() {
@@ -51,9 +67,22 @@ export default function MyTeamsPage() {
     const currentUser = getUser();
     setUser(currentUser);
     if (currentUser) {
+      fetchSports()
       fetchTeams(currentUser.id);
     }
   }, []);
+
+  async function fetchSports() {
+    try {
+      const res = await fetch(`${API}/sports`);
+      if (res.ok) {
+        const data = await res.json();
+        setSports(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch sports:", err);
+    }
+  }
 
   async function fetchTeams(userId: number) {
     setTeamsLoading(true);
@@ -109,24 +138,24 @@ export default function MyTeamsPage() {
     setActionMessage(null);
     try {
       // TODO: Team joining API
-      const res = await fetch(`${API}/teams/${teamId}/join`, {
-        method: "POST",
-        headers: authHeaders(),
-      });
+      // const res = await fetch(`${API}/teams/${teamId}/join`, {
+      //   method: "POST",
+      //   headers: authHeaders(),
+      // });
 
-      if (res.ok) {
-        const joined = availableTeams.find((t) => t.id === teamId);
-        if (joined) {
-          setMyTeams((prev) => [...prev, { ...joined, is_member: true }]);
-          setAvailableTeams((prev) => prev.filter((t) => t.id !== teamId));
-        }
-        setActionMessage({ id: teamId, text: "You've joined the team!", success: true });
-      } else if (res.status === 401) {
-        router.push("/login");
-      } else {
-        const err = await res.json();
-        setActionMessage({ id: teamId, text: err.detail || "Failed to join team.", success: false });
-      }
+      // if (res.ok) {
+      //   const joined = availableTeams.find((t) => t.id === teamId);
+      //   if (joined) {
+      //     setMyTeams((prev) => [...prev, { ...joined, is_member: true }]);
+      //     setAvailableTeams((prev) => prev.filter((t) => t.id !== teamId));
+      //   }
+      //   setActionMessage({ id: teamId, text: "You've joined the team!", success: true });
+      // } else if (res.status === 401) {
+      //   router.push("/login");
+      // } else {
+      //   const err = await res.json();
+      //   setActionMessage({ id: teamId, text: err.detail || "Failed to join team.", success: false });
+      // }
     } catch {
       setActionMessage({ id: teamId, text: "Error joining team. Is the backend running?", success: false });
     } finally {
@@ -139,22 +168,22 @@ export default function MyTeamsPage() {
     setActionMessage(null);
     try {
       // TODO: add leave api request and handle the results
-      const res = await fetch(`${API}/teams/${teamId}/leave`, {
-        method: "POST",
-        headers: authHeaders(),
-      });
+      // const res = await fetch(`${API}/teams/${teamId}/leave`, {
+      //   method: "POST",
+      //   headers: authHeaders(),
+      // });
 
-      if (res.ok) {
-        const left = myTeams.find((t) => t.id === teamId);
-        if (left) {
-          setMyTeams((prev) => prev.filter((t) => t.id !== teamId));
-          if (left.is_open) {
-            setAvailableTeams((prev) => [...prev, { ...left, is_member: false }]);
-          }
-        }
-      } else if (res.status === 401) {
-        router.push("/login");
-      }
+      // if (res.ok) {
+      //   const left = myTeams.find((t) => t.id === teamId);
+      //   if (left) {
+      //     setMyTeams((prev) => prev.filter((t) => t.id !== teamId));
+      //     if (left.is_open) {
+      //       setAvailableTeams((prev) => [...prev, { ...left, is_member: false }]);
+      //     }
+      //   }
+      // } else if (res.status === 401) {
+      //   router.push("/login");
+      // }
 
     } catch {
       console.error("Error leaving team");
@@ -162,6 +191,63 @@ export default function MyTeamsPage() {
       setLeavingTeamId(null);
     }
   }
+
+  // Modal form for creation of team
+  function openCreateModal() {
+    setFormName("");
+    setFormSport("");
+    setFormCity("");
+    setFormIsOpen(true);
+    setFormMessage("");
+    setShowCreateModal(true);
+  }
+
+  function closeCreateModal() {
+    setShowCreateModal(false);
+  }
+
+  // Team creation handle
+  async function handleCreateTeam() {
+    if (!formName || !formSport || !formCity) {
+      setFormMessage("Please fill in all required fields.");
+      return;
+    }
+  
+    setFormSubmitting(true);
+    setFormMessage("");
+
+    try {
+      console.log("Create Pressed")
+      // TODO: API post for team creation needs to prevent team creation if such a team already exists
+      const res = await fetch(`${API}/teams`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          name: formName,
+          sport: formSport,
+          city: formCity,
+          is_open: formIsOpen,
+        }),
+      });
+
+      if (res.ok) {
+      //   const newTeam: Team = await res.json();
+      //   setMyTeams((prev) => [{ ...newTeam, is_member: true }, ...prev]);
+        closeCreateModal();
+      } else if (res.status === 401) {
+        setFormMessage("Session expired. Please log in again.");
+        // router.push("/login");
+      } else {
+        const err = await res.json();
+        setFormMessage(err.detail || "Failed to create team.");
+      }
+    } catch {
+      setFormMessage("Error creating team. Is the backend running?");
+    } finally {
+      setFormSubmitting(false);
+    }
+  }
+  
 
   // Derived Data
   const allSports = Array.from(
@@ -256,6 +342,28 @@ export default function MyTeamsPage() {
         .sport-dot {
           width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 1px;
         }
+
+        .modal-overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 100;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .modal-content {
+          background: #0c0c0c; border: 1px solid #1e1e1e; border-radius: 16px;
+          padding: 24px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto;
+        }
+        .form-input {
+          width: 100%; background: #111; border: 1px solid #1e1e1e; border-radius: 8px;
+          padding: 10px 12px; color: #e4e4e7; font-size: 14px; font-family: inherit;
+        }
+        .form-input:focus { outline: none; border-color: #34d399; }
+        .form-input::placeholder { color: #52525b; }
+        .form-label { display: block; font-size: 12px; color: #71717a; margin-bottom: 6px; }
+        .primary-btn {
+          background: linear-gradient(135deg, #047857 0%, #10b981 50%, #34d399 100%);
+          border: none; border-radius: 9px; padding: 10px 20px; font-size: 13px;
+          font-weight: 600; color: #fff; cursor: pointer; font-family: inherit;
+        }
+        .primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
       `}</style>
 
       <div style={{ minHeight: "100vh", background: "#080808", color: "#e4e4e7", fontFamily: "'DM Sans', sans-serif" }}>
@@ -360,7 +468,9 @@ export default function MyTeamsPage() {
                   <div className="card" style={{ padding: 48, textAlign: "center" }}>
                     <div style={{ fontSize: 28, marginBottom: 12 }}>🏅</div>
                     <p style={{ color: "#52525b", fontSize: 13 }}>You haven't joined any teams yet.</p>
-                    <p style={{ color: "#3f3f46", fontSize: 12, marginTop: 4 }}>Browse available teams on the right to get started.</p>
+                    <p style={{ color: "#3f3f46", fontSize: 12, marginTop: 4 }}>Browse available teams below or {" "}
+                    <button className="ghost-btn" onClick={openCreateModal}>create your own team</button>
+                    {" "}to get started.</p>
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -426,29 +536,32 @@ export default function MyTeamsPage() {
                 </div>
 
                 {/* Filters */}
-                <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
-                  <input
-                    type="text"
-                    className="search-input"
-                    placeholder="Search teams..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                  <button
-                    className={`filter-btn${sportFilter === "All" ? " active" : ""}`}
-                    onClick={() => setSportFilter("All")}
-                  >
-                    All
-                  </button>
-                  {allSports.map((sport) => (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between"}}>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+                    <input
+                      type="text"
+                      className="search-input"
+                      placeholder="Search teams..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
                     <button
-                      key={sport}
-                      className={`filter-btn${sportFilter === sport ? " active" : ""}`}
-                      onClick={() => setSportFilter(sport)}
+                      className={`filter-btn${sportFilter === "All" ? " active" : ""}`}
+                      onClick={() => setSportFilter("All")}
                     >
-                      {sport}
+                      All
                     </button>
-                  ))}
+                    {allSports.map((sport) => (
+                      <button
+                        key={sport}
+                        className={`filter-btn${sportFilter === sport ? " active" : ""}`}
+                        onClick={() => setSportFilter(sport)}
+                      >
+                        {sport}
+                      </button>
+                    ))}
+                    </div>
+                    <button className="ghost-btn" onClick={openCreateModal}>+ New team</button>
                 </div>
 
                 {filteredAvailable.length === 0 ? (
@@ -525,6 +638,94 @@ export default function MyTeamsPage() {
           )}
         </main>
       </div>
+      {/* ── Create Team Modal ── */}
+      {showCreateModal && (
+        <div className="modal-overlay" onClick={closeCreateModal}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: "#fafafa", marginBottom: 20 }}>
+              Create New Team
+            </h2>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <label className="form-label">Team Name *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g., Broad St Ballers"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="form-label">Sport *</label>
+                <select
+                  className="form-input"
+                  value={formSport}
+                  onChange={(e) => setFormSport(e.target.value)}
+                >
+                  <option value="">Select a sport...</option>
+                  {sports.map((sport) => (
+                    <option key={sport.id} value={sport.id}>{sport.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="form-label">City *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g., Philadelphia"
+                  value={formCity}
+                  onChange={(e) => setFormCity(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="form-label">Membership</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {[{ label: "Open", value: true }, { label: "Invite Only", value: false }].map((opt) => (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      onClick={() => setFormIsOpen(opt.value)}
+                      style={{
+                        flex: 1, padding: "9px 0", borderRadius: 8, fontSize: 12, fontWeight: 600,
+                        cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
+                        background: formIsOpen === opt.value ? "#161616" : "transparent",
+                        border: `1px solid ${formIsOpen === opt.value ? "#2e2e2e" : "#1e1e1e"}`,
+                        color: formIsOpen === opt.value ? "#d4d4d8" : "#52525b",
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {formMessage && (
+                <p style={{ fontSize: 13, color: "#ef4444" }}>{formMessage}</p>
+              )}
+
+              <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+                <button
+                  className="primary-btn"
+                  style={{ flex: 1 }}
+                  disabled={formSubmitting}
+                  onClick={handleCreateTeam}
+                >
+                  {formSubmitting ? "Creating..." : "Create Team"}
+                </button>
+                <button className="ghost-btn" onClick={closeCreateModal}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
