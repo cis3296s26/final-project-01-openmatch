@@ -253,8 +253,31 @@ def init_db() -> None:
                 CREATE TABLE IF NOT EXISTS teams (
                     id SERIAL PRIMARY KEY,
                     name TEXT NOT NULL,
-                    sport TEXT NOT NULL,
+                    sport_id INT NOT NULL REFERENCES sports(id),
                     city TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS team_members (
+                    id SERIAL PRIMARY KEY,
+                    team_id INT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    sport_id INT NOT NULL REFERENCES sports(id),
+                    role TEXT NOT NULL DEFAULT 'member',
+                    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE(team_id, user_id),
+                    UNIQUE(team_id, sport_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS team_stats (
+                    id SERIAL PRIMARY KEY,
+                    team_id INT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                    team_mmr INT NOT NULL DEFAULT 1000,
+                    matches_played INT NOT NULL DEFAULT 0,
+                    wins INT NOT NULL DEFAULT 0,
+                    losses INT NOT NULL DEFAULT 0,
+                    ties INT NOT NULL DEFAULT 0,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
 
                 CREATE TABLE IF NOT EXISTS match_posts (
