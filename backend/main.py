@@ -202,6 +202,29 @@ class MatchPostUpdate(BaseModel):
 class ProfileSportCreate(BaseModel):
     sport_id: int
 
+class TeamMember(BaseModel):
+    id: int
+    user_id: int
+    name: str
+    role: str
+    joined_at: datetime
+
+class TeamStats(BaseModel):
+    team_mmr: int
+    matches_played: int
+    wins: int
+    losses: int
+    ties: int
+
+class TeamProfile(BaseModel):
+    id: int
+    name: str
+    sport: str
+    city: str
+    stats: TeamStats
+    members: list[TeamMember]
+    created_at: datetime
+    member_count: int
 
 def init_db() -> None:
     with engine.begin() as conn:
@@ -265,7 +288,7 @@ def init_db() -> None:
                     role TEXT NOT NULL DEFAULT 'member',
                     joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     UNIQUE(team_id, user_id),
-                    UNIQUE(team_id, sport_id)
+                    UNIQUE(user_id, sport_id)
                 );
 
                 CREATE TABLE IF NOT EXISTS team_stats (
@@ -774,6 +797,105 @@ async def set_presence(team_id: int, payload: dict):
 
     await manager.broadcast({"type": "presence_updated", "team_id": team_id, "status": status})
     return {"ok": True}
+
+@app.get("/teams/{team_id}/members")
+def list_team_members(team_id: int) -> list[TeamMember]:
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT tm.id, tm.user_id, tm.role, tm.joined_at, u.first_name || ' ' || u.last_name AS name
+                FROM team_members tm
+                JOIN users u ON u.id = tm.user_id
+                WHERE team_id = :team_id
+                ORDER BY tm.joined_at ASC
+                """
+            ),
+            {"team_id": team_id}
+        ).mappings().all()
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="Team not found or has no members")
+
+    return [TeamMember(**row) for row in rows]
+
+@app.get("/teams/{team_id}/stats")
+def get_team_stats(team_id: int) -> TeamStats:
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT team_mmr, matches_played, wins, losses, ties
+                FROM team_stats
+                WHERE team_id = :team_id
+                """
+            ),
+            {"team_id": team_id}
+        ).mappings().first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Team stats not found")
+
+    return TeamStats(**row)
+
+@app.get("/teams/{team_id}/profile")
+def get_team_profile(team_id: int) -> TeamProfile:
+    with engine.begin() as conn:
+        team_row = conn.execute(
+            text(
+                """
+                SELECT t.id, t.name, s.name as sport, t.city, t.created_at, ts.team_mmr, ts.matches_played, ts.wins, ts.losses, ts.ties
+                FROM teams t
+                JOIN sports s ON s.id = t.sport_id
+                JOIN team_stats ts ON ts.team_id = t.id
+                WHERE t.id = :team_id
+                """),
+            {"team_id": team_id}
+        ).mappings().first()
+
+        if not team_row:
+            raise HTTPException(status_code=404, detail="Team not found")
+        
+        members_rows = conn.execute(
+            text(
+                """
+                SELECT tm.id, tm.user_id, tm.role, tm.joined_at, u.first_name, u.last_name
+                FROM team_members tm
+                JOIN users u ON u.id = tm.user_id
+                WHERE tm.team_id = :team_id
+                ORDER BY tm.joined_at ASC
+                """),
+            {"team_id": team_id}
+        ).mappings().all()
+
+    members = [
+        TeamMember(
+            id=row["id"],
+            user_id=row["user_id"],
+            name=f"{row['first_name']} {row['last_name']}",
+            role=row["role"],
+            joined_at=row["joined_at"]
+        )
+        for row in members_rows
+    ]
+
+    return TeamProfile(
+        id=team_row["id"],
+        name=team_row["name"],
+        sport=team_row["sport"],
+        city=team_row["city"],
+        created_at=team_row["created_at"],
+        member_count=len(members),
+        stats=TeamStats(
+            team_mmr=team_row["team_mmr"],
+            matches_played=team_row["matches_played"],
+            wins=team_row["wins"],
+            losses=team_row["losses"],
+            ties=team_row["ties"]
+        ),
+        members=members
+    )
+
 
 
 @app.post("/posts", status_code=201)

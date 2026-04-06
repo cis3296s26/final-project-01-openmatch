@@ -33,7 +33,7 @@ type Team = {
     rank: string;
     wins: number;
     losses: number;
-    draws: number;
+    ties: number;
     member_count: number;
     created_at: string;
     description: string | null;
@@ -50,7 +50,7 @@ const STATIC_TEAM: Team = {
     rank: "Gold II",
     wins: 14,
     losses: 5,
-    draws: 2,
+    ties: 2,
     member_count: 9,
     created_at: "2024-09-01T00:00:00Z",
     description: "A competitive rec soccer squad based in South Philly. We play most weekends at FDR Park and Clark Park. Always looking for subs!",
@@ -167,7 +167,7 @@ export default function TeamProfilePage() {
     }
 
     const sportColor = team ? (SPORT_COLORS[team.sport] || "#4ade80") : "#4ade80";
-    const totalGames = team ? team.wins + team.losses + team.draws : 0;
+    const totalGames = team ? team.wins + team.losses + team.ties : 0;
     const winRate = totalGames > 0 && team ? Math.round((team.wins / totalGames) * 100) : 0;
 
   // MMR/Rank tier config/calculations
@@ -426,7 +426,7 @@ const recentResults = ["W","W","L","W","L","W","W","W","L","W"];
             {[
               { label: "Wins", value: team.wins, color: "#4ade80" },
               { label: "Losses", value: team.losses, color: "#f87171" },
-              { label: "Draws", value: team.draws, color: "#facc15" },
+              { label: "Ties", value: team.ties, color: "#facc15" },
               { label: "Win Rate", value: `${winRate}%`, color: sportColor },
               { label: "Games Played", value: totalGames, color: "#71717a" },
             ].map((stat) => (
