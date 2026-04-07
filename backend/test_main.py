@@ -414,3 +414,4 @@ def test_verification_token_expired(mock_engine):
 
     response = client.get("/verify?token=12345678")
     assert response.status_code == 401
+

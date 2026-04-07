@@ -296,6 +296,7 @@ def init_db() -> None:
                     sport_id INT NOT NULL REFERENCES sports(id),
                     description TEXT,
                     city TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     UNIQUE(name, sport_id)
                 );
 
@@ -805,7 +806,7 @@ async def create_team(payload: TeamCreateForm, current_user: dict = Depends(get_
                     WITH inserted_team AS (
                         INSERT INTO teams (name, sport_id, city)
                         VALUES (:name, :sport_id, :city)
-                        RETURNING id, name, sport_id, city
+                        RETURNING id, name, sport_id, city, created_at
                     )
                     SELECT it.id, it.name, it.city, it.sport_id, s.name AS sport
                     FROM inserted_team it
@@ -815,22 +816,32 @@ async def create_team(payload: TeamCreateForm, current_user: dict = Depends(get_
                 {"name": payload.name, "sport_id": payload.sport_id, "city": payload.city},
             ).mappings().one()
             result = dict(row)
+
+            # Define Team and UserID
             team_id = result["id"]
-        user_id = int(current_user["sub"])
+            user_id = int(current_user["sub"])
 
-        team_row = conn.execute(
-            text("""
-                INSERT INTO teams (name, sport_id, city)
-                VALUES (:name, :sport_id, :city)
-                RETURNING id, name, sport_id, city, created_at
-            """),
-            {"name": payload.name, "sport_id": payload.sport_id, "city": payload.city}
-        ).mappings().one()
+            # Initialize team profile
+            conn.execute(
+                text("""
+                    INSERT INTO team_stats (team_id, team_mmr, matches_played, wins, losses, ties)
+                    VALUES (:team_id, 1000, 0, 0, 0, 0)
+                """),
+                {"team_id": team_id}
+            )
 
-        team_id = team_row["id"]
-
+            # Create first user as captain
+            conn.execute(
+                text("""
+                    INSERT INTO team_members (user_id, team_id, sport_id, role)
+                    SELECT :user_id, :team_id, sport_id, 'captain'
+                    FROM teams WHERE id = :team_id
+                """),
+                {"user_id": user_id, "team_id": team_id}
+            )
 
             await manager.broadcast({"type": "team_created", "team_id": team_id})
+            
             return {
                 "name": result["name"],
                 "id": result["id"],
@@ -840,24 +851,6 @@ async def create_team(payload: TeamCreateForm, current_user: dict = Depends(get_
             }
         except IntegrityError:
             raise HTTPException(status_code=400, detail="A team with this name and sport already exist")
-        conn.execute(
-            text("""
-                INSERT INTO team_stats (team_id, team_mmr, matches_played, wins, losses, ties)
-                VALUES (:team_id, 1000, 0, 0, 0, 0)
-            """),
-            {"team_id": team_id}
-        )
-
-        conn.execute(
-            text("""
-                INSERT INTO team_members (user_id, team_id, sport_id, role)
-                SELECT :user_id, :team_id, sport_id, 'captain'
-                FROM teams WHERE id = :team_id
-            """),
-            {"user_id": user_id, "team_id": team_id}
-        )
-
-    return team_row
 
 
 @app.get("/teams")
