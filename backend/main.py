@@ -199,7 +199,7 @@ class MatchPostUpdate(BaseModel):
     skill: Optional[str] = Field(default=None, max_length=50)
     location: Optional[str] = Field(default=None, max_length=100)
     note: Optional[str] = Field(default=None, max_length=500)
-    
+
 class ProfileSportCreate(BaseModel):
     sport_id: int
 
@@ -222,6 +222,8 @@ class TeamProfile(BaseModel):
     name: str
     sport: str
     city: str
+    description: str | None
+    rank: str
     stats: TeamStats
     members: list[TeamMember]
     created_at: datetime
@@ -292,6 +294,7 @@ def init_db() -> None:
                     id SERIAL PRIMARY KEY,
                     name TEXT NOT NULL,
                     sport_id INT NOT NULL REFERENCES sports(id),
+                    description TEXT,
                     city TEXT NOT NULL,
                     UNIQUE(name, sport_id)
                 );
@@ -793,27 +796,39 @@ def login(payload: UserLogin):
 
 
 @app.post("/teams")
-async def create_team(payload: TeamCreateForm):
+async def create_team(payload: TeamCreateForm, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
-        try: 
-            res = conn.execute(
-                text(
-                    """
-                    INSERT INTO teams(name, sport_id, city)
-                    VALUES (:name, :sport_id, :city)
-                    RETURNING id
-                    """
-                ),
-                {"name": payload.name, "sport_id": payload.sport_id, "city": payload.city},
-            )
-            team_id = res.scalar_one()
+        user_id = int(current_user["sub"])
 
-            r.hset(f"team:{team_id}:presence", mapping={"status": "Offline", "updated_at": now_iso()})
+        team_row = conn.execute(
+            text("""
+                INSERT INTO teams (name, sport_id, city)
+                VALUES (:name, :sport_id, :city)
+                RETURNING id, name, sport_id, city, created_at
+            """),
+            {"name": payload.name, "sport_id": payload.sport_id, "city": payload.city}
+        ).mappings().one()
 
-            await manager.broadcast({"type": "team_created", "team_id": team_id})
-            return {"id": team_id}
-        except IntegrityError:
-            raise HTTPException(status_code=400, detail="A team with this name and sport already exist")
+        team_id = team_row["id"]
+
+        conn.execute(
+            text("""
+                INSERT INTO team_stats (team_id, team_mmr, matches_played, wins, losses, ties)
+                VALUES (:team_id, 1000, 0, 0, 0, 0)
+            """),
+            {"team_id": team_id}
+        )
+
+        conn.execute(
+            text("""
+                INSERT INTO team_members (user_id, team_id, sport_id, role)
+                SELECT :user_id, :team_id, sport_id, 'captain'
+                FROM teams WHERE id = :team_id
+            """),
+            {"user_id": user_id, "team_id": team_id}
+        )
+
+    return team_row
 
 
 @app.get("/teams")
@@ -864,7 +879,7 @@ async def join_team(team_id: int, payload: joinTeam, current_user: dict = Depend
             raise HTTPException(status_code=400, detail="User is already a member of this team")
         
 @app.post("/teams/{team_id}/leave")
-async def join_team(team_id: int, current_user: dict = Depends(get_current_user)):
+async def leave_team(team_id: int, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
         user_id = int(current_user["sub"])
 
@@ -907,21 +922,25 @@ async def set_presence(team_id: int, payload: dict):
 @app.get("/teams/{team_id}/members")
 def list_team_members(team_id: int) -> list[TeamMember]:
     with engine.begin() as conn:
+        team = conn.execute(
+            text("SELECT id FROM teams WHERE id = :team_id"),
+            {"team_id": team_id}
+        ).first()
+
+        if not team:
+            raise HTTPException(status_code=404, detail="Team not found")
+
         rows = conn.execute(
-            text(
-                """
-                SELECT tm.id, tm.user_id, tm.role, tm.joined_at, u.first_name || ' ' || u.last_name AS name
+            text("""
+                SELECT tm.id, tm.user_id, tm.role, tm.joined_at,
+                       u.first_name || ' ' || u.last_name AS name
                 FROM team_members tm
                 JOIN users u ON u.id = tm.user_id
                 WHERE team_id = :team_id
                 ORDER BY tm.joined_at ASC
-                """
-            ),
+            """),
             {"team_id": team_id}
         ).mappings().all()
-
-    if not rows:
-        raise HTTPException(status_code=404, detail="Team not found or has no members")
 
     return [TeamMember(**row) for row in rows]
 
@@ -948,38 +967,57 @@ def get_team_stats(team_id: int) -> TeamStats:
 def get_team_profile(team_id: int) -> TeamProfile:
     with engine.begin() as conn:
         team_row = conn.execute(
-            text(
-                """
-                SELECT t.id, t.name, s.name as sport, t.city, t.created_at, ts.team_mmr, ts.matches_played, ts.wins, ts.losses, ts.ties
+            text("""
+                SELECT t.id, t.name, s.name as sport, t.city, t.created_at, t.description,
+                       ts.team_mmr, ts.matches_played, ts.wins, ts.losses, ts.ties
                 FROM teams t
                 JOIN sports s ON s.id = t.sport_id
                 JOIN team_stats ts ON ts.team_id = t.id
                 WHERE t.id = :team_id
-                """),
+            """),
             {"team_id": team_id}
         ).mappings().first()
 
         if not team_row:
             raise HTTPException(status_code=404, detail="Team not found")
-        
+
         members_rows = conn.execute(
-            text(
-                """
+            text("""
                 SELECT tm.id, tm.user_id, tm.role, tm.joined_at, u.first_name, u.last_name
                 FROM team_members tm
                 JOIN users u ON u.id = tm.user_id
                 WHERE tm.team_id = :team_id
                 ORDER BY tm.joined_at ASC
-                """),
+            """),
             {"team_id": team_id}
         ).mappings().all()
+
+    TIERS = [
+        {"name": "Bronze III", "min": 0,    "max": 299},
+        {"name": "Bronze II",  "min": 300,  "max": 599},
+        {"name": "Bronze I",   "min": 600,  "max": 899},
+        {"name": "Silver III", "min": 900,  "max": 1099},
+        {"name": "Silver II",  "min": 1100, "max": 1249},
+        {"name": "Silver I",   "min": 1250, "max": 1399},
+        {"name": "Gold III",   "min": 1400, "max": 1549},
+        {"name": "Gold II",    "min": 1550, "max": 1699},
+        {"name": "Gold I",     "min": 1700, "max": 1849},
+        {"name": "Platinum III","min": 1850,"max": 1999},
+        {"name": "Platinum II", "min": 2000,"max": 2149},
+        {"name": "Platinum I",  "min": 2150,"max": 2299},
+        {"name": "Diamond",    "min": 2300, "max": 2599},
+        {"name": "Champion",   "min": 2600, "max": 9999},
+    ]
+
+    mmr = team_row["team_mmr"]
+    rank = next((t["name"] for t in TIERS if t["min"] <= mmr <= t["max"]), "Bronze III")
 
     members = [
         TeamMember(
             id=row["id"],
             user_id=row["user_id"],
             name=f"{row['first_name']} {row['last_name']}",
-            role=row["role"],
+            role=row["role"].lower(),
             joined_at=row["joined_at"]
         )
         for row in members_rows
@@ -990,6 +1028,8 @@ def get_team_profile(team_id: int) -> TeamProfile:
         name=team_row["name"],
         sport=team_row["sport"],
         city=team_row["city"],
+        description=team_row["description"],
+        rank=rank,
         created_at=team_row["created_at"],
         member_count=len(members),
         stats=TeamStats(

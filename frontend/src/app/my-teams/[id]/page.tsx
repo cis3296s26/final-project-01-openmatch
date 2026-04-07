@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { authHeaders, clearAuth, getUser } from "@/lib/auth";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
@@ -40,39 +42,6 @@ type Team = {
     mmr: number;
 };
 
-// TODO: Replace with API fetch calls using team id from route params
-
-const STATIC_TEAM: Team = {
-    id: 1,
-    name: "Broad St Ballers",
-    sport: "Soccer",
-    city: "Philadelphia",
-    rank: "Gold II",
-    wins: 14,
-    losses: 5,
-    ties: 2,
-    member_count: 9,
-    created_at: "2024-09-01T00:00:00Z",
-    description: "A competitive rec soccer squad based in South Philly. We play most weekends at FDR Park and Clark Park. Always looking for subs!",
-    mmr: 1680,
-};
-
-const STATIC_MEMBERS: TeamMember[] = [
-    { id: 1, user_id: 1, name: "Jordan M.", role: "captain", joined_at: "2024-09-01T00:00:00Z" },
-    { id: 2, user_id: 2, name: "Marco R.", role: "member", joined_at: "2024-09-04T00:00:00Z" },
-    { id: 3, user_id: 3, name: "Priya K.", role: "member", joined_at: "2024-09-10T00:00:00Z" },
-    { id: 4, user_id: 4, name: "Devon L.", role: "member", joined_at: "2024-10-01T00:00:00Z" },
-    { id: 5, user_id: 5, name: "Sam T.", role: "member", joined_at: "2024-10-15T00:00:00Z" },
-];
-
-const STATIC_MATCHES: TeamMatch[] = [
-    { id: 1, opponent: "Eastside FC", location: "FDR Park", played_at: "2025-03-27T14:00:00Z", score_us: 3, score_them: 1, result: "win" },
-    { id: 2, opponent: "North Philly Rovers", location: "Clark Park", played_at: "2025-03-24T10:00:00Z", score_us: 0, score_them: 2, result: "loss" },
-    { id: 3, opponent: "South Street Squad", location: "Cobb's Creek", played_at: "2025-03-18T11:00:00Z", score_us: 2, score_them: 1, result: "win" },
-    { id: 4, opponent: "Fishtown United", location: "Penn Treaty Park", played_at: "2025-03-10T13:00:00Z", score_us: 1, score_them: 1, result: "draw" },
-    { id: 5, opponent: "Manayunk FC", location: "Pretzel Park", played_at: "2025-03-03T09:00:00Z", score_us: 4, score_them: 0, result: "win" },
-];
-
 const SPORT_COLORS: Record<string, string> = {
     "Soccer": "#4ade80",
     "Basketball": "#fb923c",
@@ -99,34 +68,46 @@ function getInitials(name: string): string {
 export default function TeamProfilePage() {
     const router = useRouter();
     const params = useParams();
-    const teamId = params?.id; // TODO: use teamId in fetch calls below
+    const teamId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
     const [menuOpen, setMenuOpen] = useState(false);
     const [user, setUser] = useState<ReturnType<typeof getUser>>(null);
 
-    // Data state — swap STATIC_ values for real API data when backend is ready
-    const [team, setTeam] = useState<Team | null>(STATIC_TEAM);
-    const [members, setMembers] = useState<TeamMember[]>(STATIC_MEMBERS);
-    const [matches, setMatches] = useState<TeamMatch[]>(STATIC_MATCHES);
+    const [team, setTeam] = useState<Team | null>(null);
+    const [members, setMembers] = useState<TeamMember[]>([]);
+    const [matches, setMatches] = useState<TeamMatch[]>([]);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         const currentUser = getUser();
         setUser(currentUser);
 
-        // TODO: uncomment and implement when backend endpoints are ready
-        // fetchTeam(teamId);
-        // fetchTeamMembers(teamId);
+        fetchTeam(teamId);
+        fetchTeamMembers(teamId);
         // fetchTeamMatches(teamId);
     }, [teamId]);
 
-    async function fetchTeam(id: string | string[]) {
+    async function fetchTeam(id: string | undefined) {
         setLoading(true);
         try {
-        const res = await fetch(`${API}/teams/${id}`, { headers: authHeaders() });
+        const res = await fetch(`${API}/teams/${id}/profile`, { headers: authHeaders() });
         if (res.ok) {
             const data = await res.json();
-            setTeam(data);
+            setTeam({
+                id: data.id,
+                name: data.name,
+                sport: data.sport,
+                city: data.city,
+                description: data.description,
+                rank: data.rank,
+                mmr: data.stats.team_mmr,
+                wins: data.stats.wins,
+                losses: data.stats.losses,
+                ties: data.stats.ties,
+                member_count: data.member_count,
+                created_at: data.created_at,
+            });
+            setMembers(data.members);
         } else if (res.status === 401) {
             router.push("/login");
         }
@@ -137,7 +118,7 @@ export default function TeamProfilePage() {
         }
     }
 
-    async function fetchTeamMembers(id: string | string[]) {
+    async function fetchTeamMembers(id: string | undefined) {
         try {
         const res = await fetch(`${API}/teams/${id}/members`, { headers: authHeaders() });
         if (res.ok) {
@@ -205,8 +186,8 @@ const progress = Math.round((ptsInTier / tierSpan) * 100);
 const tierKey = Object.keys(RANK_META).find(k => currentTier.name.startsWith(k)) ?? "Gold";
 const { color: rankColor, fill: rankFill, icon: rankIcon } = RANK_META[tierKey];
 
-// TODO: replace with real match result history from backend
-const recentResults = ["W","W","L","W","L","W","W","W","L","W"];
+
+const recentResults = matches.slice(0, 10).map((m) => m.result === "win" ? "W" : m.result === "loss" ? "L" : "D");
 
     if (loading) {
         return (
