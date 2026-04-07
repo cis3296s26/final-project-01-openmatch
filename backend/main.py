@@ -202,6 +202,16 @@ class MatchPostUpdate(BaseModel):
 class ProfileSportCreate(BaseModel):
     sport_id: int
 
+class Team(BaseModel):
+    id: int
+    name: str
+    sport_id: int
+    city: str
+
+class TeamCreateForm(BaseModel):
+    name: str
+    sport_id: int
+    city: str
 
 def init_db() -> None:
     with engine.begin() as conn:
@@ -611,6 +621,25 @@ def get_user_profile_sports(user_id: int, current_user: dict = Depends(get_curre
 
     return [dict(row) for row in rows]
 
+@app.get("/users/{user_id}/teams")
+def get_user_profile_sports(user_id: int, current_user: dict = Depends(get_current_user)):
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT t.id, t.name, t.sport_id, t.city, s.name AS sport
+                FROM team_members tm
+                JOIN teams t ON tm.team_id = t.id
+                JOIN sports s ON t.sport_id = s.id
+                WHERE tm.user_id = :user_id
+                """
+            ),
+            {
+                "user_id": user_id
+            }
+        ).mappings().all()
+
+    return [dict(row) for row in rows]
 
 @app.post("/profile-sports", status_code=201)
 def create_profile_sport(payload: ProfileSportCreate, current_user: dict = Depends(get_current_user)):
@@ -735,11 +764,17 @@ def login(payload: UserLogin):
 
 
 @app.post("/teams")
-async def create_team(payload: dict):
+async def create_team(payload: TeamCreateForm):
     with engine.begin() as conn:
         res = conn.execute(
-            text("INSERT INTO teams(name, sport, city) VALUES (:n,:s,:c) RETURNING id"),
-            {"n": payload["name"], "s": payload["sport"], "c": payload["city"]},
+            text(
+                """
+                INSERT INTO teams(name, sport_id, city)
+                VALUES (:name, :sport_id, :city)
+                RETURNING id
+                """
+            ),
+            {"name": payload.name, "sport_id": payload.sport_id, "city": payload.city},
         )
         team_id = res.scalar_one()
 
@@ -752,7 +787,16 @@ async def create_team(payload: dict):
 @app.get("/teams")
 def list_teams():
     with engine.begin() as conn:
-        rows = conn.execute(text("SELECT id, name, sport, city FROM teams ORDER BY id DESC")).mappings().all()
+        rows = conn.execute(
+            text(
+                """
+                SELECT t.id, t.name, t.sport_id, t.city, s.name AS sport
+                FROM teams t
+                JOIN sports s ON t.sport_id = s.id
+                ORDER BY id DESC
+                """
+            )
+        ).mappings().all()
 
     teams = []
     for row in rows:
