@@ -14,10 +14,8 @@ type Team = {
   sport: string;
   sport_id: number;
   city: string;
-  member_count: number;
   rank?: string;
   is_member: boolean;
-  is_open: boolean;
 };
 
 // Sport Type
@@ -84,78 +82,63 @@ export default function MyTeamsPage() {
     }
   }
 
+  // Real function for grabbing teams from the API
   async function fetchTeams(userId: number) {
     setTeamsLoading(true);
+    try {
+      const [memberRes, allRes] = await Promise.all([
+        fetch(`${API}/users/${userId}/teams`, { headers: authHeaders() }),
+        fetch(`${API}/teams`),
+      ]);
 
-    // Mock data — remove when real endpoints are ready
-    setMyTeams([
-      { id: 1, name: "Broad St Ballers", sport: "Soccer", sport_id: 1, city: "Philadelphia", member_count: 9, rank: "Gold II", is_member: true, is_open: true },
-      { id: 2, name: "The Rim Breakers", sport: "Basketball", sport_id: 2, city: "Philadelphia", member_count: 5, rank: "Silver I", is_member: true, is_open: false },
-    ]);
-    setAvailableTeams([
-      { id: 3, name: "Fishtown FC", sport: "Soccer", sport_id: 3, city: "Philadelphia", member_count: 11, is_member: false, is_open: true },
-      { id: 4, name: "Sunrise Picklers", sport: "Pickleball", sport_id: 4, city: "Philadelphia", member_count: 6, is_member: false, is_open: true },
-      { id: 5, name: "South Street Squad", sport: "Volleyball", sport_id: 5, city: "Philadelphia", member_count: 8, is_member: false, is_open: true },
-    ]);
+      let memberTeamIds: Set<number> = new Set();
 
-    setTeamsLoading(false);
+      if (memberRes.ok) {
+        const memberData: Team[] = await memberRes.json();
+        memberTeamIds = new Set(memberData.map((t) => t.id));
+        setMyTeams(memberData.map((t) => ({ ...t, is_member: true })));
+      }
+
+      if (allRes.ok) {
+        const allData: Team[] = await allRes.json();
+        setAvailableTeams(
+          allData
+            .filter((t) => !memberTeamIds.has(t.id))
+            .map((t) => ({ ...t, is_member: false }))
+        );
+      }
+    } catch (err) {
+      console.error("Failed to fetch teams:", err);
+    } finally {
+      setTeamsLoading(false);
+    }
   }
-
-  // Real function for grabbing teams from the API
-  // async function fetchTeams(userId: number) {
-  //   setTeamsLoading(true);
-  //   try {
-  //     const [memberRes, allRes] = await Promise.all([
-  //       fetch(`${API}/users/${userId}/teams`, { headers: authHeaders() }),
-  //       fetch(`${API}/teams`),
-  //     ]);
-
-  //     let memberTeamIds: Set<number> = new Set();
-
-  //     if (memberRes.ok) {
-  //       const memberData: Team[] = await memberRes.json();
-  //       memberTeamIds = new Set(memberData.map((t) => t.id));
-  //       setMyTeams(memberData.map((t) => ({ ...t, is_member: true })));
-  //     }
-
-  //     if (allRes.ok) {
-  //       const allData: Team[] = await allRes.json();
-  //       setAvailableTeams(
-  //         allData
-  //           .filter((t) => !memberTeamIds.has(t.id) && t.is_open)
-  //           .map((t) => ({ ...t, is_member: false }))
-  //       );
-  //     }
-  //   } catch (err) {
-  //     console.error("Failed to fetch teams:", err);
-  //   } finally {
-  //     setTeamsLoading(false);
-  //   }
-  // }
 
   async function handleJoinTeam(teamId: number) {
     setJoiningTeamId(teamId);
     setActionMessage(null);
     try {
-      // TODO: Team joining API
-      // const res = await fetch(`${API}/teams/${teamId}/join`, {
-      //   method: "POST",
-      //   headers: authHeaders(),
-      // });
+      const res = await fetch(`${API}/teams/${teamId}/join`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          role: "member"
+        }),
+      });
 
-      // if (res.ok) {
-      //   const joined = availableTeams.find((t) => t.id === teamId);
-      //   if (joined) {
-      //     setMyTeams((prev) => [...prev, { ...joined, is_member: true }]);
-      //     setAvailableTeams((prev) => prev.filter((t) => t.id !== teamId));
-      //   }
-      //   setActionMessage({ id: teamId, text: "You've joined the team!", success: true });
-      // } else if (res.status === 401) {
-      //   router.push("/login");
-      // } else {
-      //   const err = await res.json();
-      //   setActionMessage({ id: teamId, text: err.detail || "Failed to join team.", success: false });
-      // }
+      if (res.ok) {
+        const joined = availableTeams.find((t) => t.id === teamId);
+        if (joined) {
+          setMyTeams((prev) => [...prev, { ...joined, is_member: true }]);
+          setAvailableTeams((prev) => prev.filter((t) => t.id !== teamId));
+        }
+        setActionMessage({ id: teamId, text: "You've joined the team!", success: true });
+      } else if (res.status === 401) {
+        router.push("/login");
+      } else {
+        const err = await res.json();
+        setActionMessage({ id: teamId, text: err.detail || "Failed to join team.", success: false });
+      }
     } catch {
       setActionMessage({ id: teamId, text: "Error joining team. Is the backend running?", success: false });
     } finally {
@@ -168,22 +151,20 @@ export default function MyTeamsPage() {
     setActionMessage(null);
     try {
       // TODO: add leave api request and handle the results
-      // const res = await fetch(`${API}/teams/${teamId}/leave`, {
-      //   method: "POST",
-      //   headers: authHeaders(),
-      // });
+      const res = await fetch(`${API}/teams/${teamId}/leave`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
 
-      // if (res.ok) {
-      //   const left = myTeams.find((t) => t.id === teamId);
-      //   if (left) {
-      //     setMyTeams((prev) => prev.filter((t) => t.id !== teamId));
-      //     if (left.is_open) {
-      //       setAvailableTeams((prev) => [...prev, { ...left, is_member: false }]);
-      //     }
-      //   }
-      // } else if (res.status === 401) {
-      //   router.push("/login");
-      // }
+      if (res.ok) {
+        const left = myTeams.find((t) => t.id === teamId);
+        if (left) {
+          setMyTeams((prev) => prev.filter((t) => t.id !== teamId));
+          setAvailableTeams((prev) => [...prev, { ...left, is_member: false }]);
+        }
+      } else if (res.status === 401) {
+        router.push("/login");
+      }
 
     } catch {
       console.error("Error leaving team");
@@ -218,25 +199,25 @@ export default function MyTeamsPage() {
 
     try {
       console.log("Create Pressed")
-      // TODO: API post for team creation needs to prevent team creation if such a team already exists
       const res = await fetch(`${API}/teams`, {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({
           name: formName,
-          sport: formSport,
+          sport_id: formSport,
           city: formCity,
           is_open: formIsOpen,
         }),
       });
 
       if (res.ok) {
-      //   const newTeam: Team = await res.json();
-      //   setMyTeams((prev) => [{ ...newTeam, is_member: true }, ...prev]);
+        const newTeam: Team = await res.json();
+        console.log("Created team response:", newTeam);
+        setMyTeams((prev) => [{ ...newTeam, is_member: true }, ...prev]);
         closeCreateModal();
       } else if (res.status === 401) {
         setFormMessage("Session expired. Please log in again.");
-        // router.push("/login");
+        router.push("/login");
       } else {
         const err = await res.json();
         setFormMessage(err.detail || "Failed to create team.");
@@ -491,7 +472,7 @@ export default function MyTeamsPage() {
                                 <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
                                   <span className="sport-dot" style={{ background: sportColor }} />
                                   <span style={{ fontSize: 11, color: "#3f3f46" }}>
-                                    {team.sport} · {team.city} · {team.member_count} member{team.member_count !== 1 ? "s" : ""}
+                                    {team.sport} · {team.city}
                                   </span>
                                 </div>
                               </div>
@@ -505,7 +486,7 @@ export default function MyTeamsPage() {
 
                           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                             <Link
-                              href={`/teams/${team.id}`}
+                              href={`/my-teams/${team.id}`}
                               className="ghost-btn"
                               style={{ textDecoration: "none" }}
                             >
@@ -525,8 +506,6 @@ export default function MyTeamsPage() {
                   </div>
                 )}
               </div>
-
-              {/* ── BOTTOM: Available Teams ── */}
               <div>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
                   <h2 style={{ fontSize: 15, fontWeight: 500, color: "#d4d4d8" }}>Available teams</h2>
@@ -594,15 +573,11 @@ export default function MyTeamsPage() {
                                 <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
                                   <span className="sport-dot" style={{ background: sportColor }} />
                                   <span style={{ fontSize: 11, color: "#3f3f46" }}>
-                                    {team.sport} · {team.city} · {team.member_count} member{team.member_count !== 1 ? "s" : ""}
+                                    {team.sport} · {team.city}
                                   </span>
                                 </div>
                               </div>
                             </div>
-                            {/* Open badge */}
-                            <span style={{ padding: "3px 9px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "rgba(52,211,153,0.06)", border: "1px solid rgba(52,211,153,0.16)", color: "#6ee7b7", flexShrink: 0 }}>
-                              Open
-                            </span>
                           </div>
 
                           {wasActioned && actionMessage && (
