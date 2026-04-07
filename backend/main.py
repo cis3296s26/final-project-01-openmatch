@@ -213,6 +213,9 @@ class TeamCreateForm(BaseModel):
     sport_id: int
     city: str
 
+class joinTeam(BaseModel):
+    role: str
+
 def init_db() -> None:
     with engine.begin() as conn:
         conn.execute(
@@ -803,6 +806,59 @@ def list_teams():
         pres = r.hgetall(f"team:{row['id']}:presence") or {"status": "Offline", "updated_at": None}
         teams.append({**row, "presence": pres})
     return teams
+
+@app.post("/teams/{team_id}/join")
+async def join_team(team_id: int, payload: joinTeam, current_user: dict = Depends(get_current_user)):
+    with engine.begin() as conn:
+        user_id = int(current_user["sub"])
+
+        try:
+            row = conn.execute(
+                text(
+                    """
+                    INSERT INTO team_members (user_id, team_id, sport_id, role)
+                    SELECT :user_id, t.id, t.sport_id, :role
+                    FROM teams t
+                    WHERE t.id = :team_id
+                    RETURNING id, user_id, team_id, sport_id, role, joined_at
+                    """
+                ),
+                {
+                    "user_id": user_id,
+                    "team_id": team_id,
+                    "role": payload.role
+                },
+            ).mappings().one()
+
+            return row
+        except IntegrityError:
+            raise HTTPException(status_code=400, detail="User is already a member of this team")
+        
+@app.post("/teams/{team_id}/leave")
+async def join_team(team_id: int, current_user: dict = Depends(get_current_user)):
+    with engine.begin() as conn:
+        user_id = int(current_user["sub"])
+
+        try:
+            row = conn.execute(
+                text(
+                    """
+                    DELETE FROM team_members
+                    WHERE (user_id = :user_id) AND (team_id = :team_id)
+                    """
+                ),
+                {
+                    "user_id": user_id,
+                    "team_id": team_id,
+                },
+            )
+
+            if row.rowcount == 0:
+                raise HTTPException(status_code=400, detail="User is not a member of this team")
+
+            return {"ok": True}
+        except IntegrityError:
+            raise HTTPException(status_code=400, detail="Bad Request")
 
 
 @app.post("/teams/{team_id}/presence")
