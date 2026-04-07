@@ -50,8 +50,7 @@ export default function LandingPage() {
           to   { transform: translateX(-50%); }
         }
         @keyframes ready-pulse {
-          0%,100% { box-shadow: 0 0 0 1px rgba(52,211,153,0.3), 0 0 22px rgba(52,211,153,0.42), 0 0 55px rgba(16,185,129,0.13); }
-          50%     { box-shadow: 0 0 0 1px rgba(52,211,153,0.5), 0 0 36px rgba(52,211,153,0.65), 0 0 72px rgba(16,185,129,0.28); }
+
         }
         @keyframes modal-in {
           from { opacity: 0; transform: scale(0.96) translateY(10px); }
@@ -87,7 +86,7 @@ export default function LandingPage() {
         .cta-ghost {
           display: inline-flex; align-items: center; justify-content: center;
           background: transparent; border: 1px solid #222; border-radius: 12px;
-          padding: 13px 28px; font-size: 14px; font-weight: 600; color: #71717a;
+          padding: 13px 28px; font-size: 14px; font-weight: 600; color: #acacac;
           cursor: pointer; font-family: 'DM Sans', sans-serif;
           transition: border-color 0.15s, color 0.15s;
         }
@@ -138,10 +137,10 @@ export default function LandingPage() {
 
         .nav-link {
           background: transparent; border: none; border-radius: 10px;
-          padding: 6px 14px; font-size: 13px; color: #52525b;
+          padding: 6px 14px; font-size: 13px; color: #d1d1d1;
           cursor: pointer; font-family: 'DM Sans', sans-serif; transition: color 0.15s;
         }
-        .nav-link:hover { color: #a1a1aa; }
+        .nav-link:hover { color: #ffffff; }
 
         .match-row { transition: background 0.12s; }
         .match-row:hover { background: rgba(255,255,255,0.015); }
@@ -157,7 +156,7 @@ export default function LandingPage() {
           <div style={{ maxWidth: 1160, margin: "0 auto", padding: "0 28px", height: 54, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 30, height: 30, borderRadius: 8, background: "#34d399", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11, color: "#080808", boxShadow: "0 0 18px rgba(52,211,153,0.35)" }}>
+                <div style={{ width: 30, height: 30, borderRadius: 8, background: "#34d399", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11, color: "#080808"}}>
                   OM
                 </div>
                 <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.025em", color: "#fafafa" }}>OpenMatch</span>
@@ -198,7 +197,7 @@ export default function LandingPage() {
             <span style={{ color: "#34d399" }}>game.</span> Right now.
           </h1>
 
-          <p className="a3" style={{ fontSize: 17, color: "#3f3f46", maxWidth: 460, margin: "0 auto 44px", lineHeight: 1.7 }}>
+          <p className="a3" style={{ fontSize: 17, color: "#8d8d8d", maxWidth: 460, margin: "0 auto 44px", lineHeight: 1.7 }}>
             OpenMatch connects pickup players and teams across Philly in real time. Post a game, ready up, and play.
           </p>
 
@@ -216,7 +215,7 @@ export default function LandingPage() {
             {stats.map((s, i) => (
               <div key={s.label} style={{ padding: "18px 32px", textAlign: "center", borderRight: i < stats.length - 1 ? "1px solid #191919" : "none" }}>
                 <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.04em", color: "#fafafa" }}>{s.value}</div>
-                <div style={{ fontSize: 11, color: "#3f3f46", marginTop: 4 }}>{s.label}</div>
+                <div style={{ fontSize: 11, color: "#8d8d8d", marginTop: 4 }}>{s.label}</div>
               </div>
             ))}
           </div>
@@ -235,7 +234,7 @@ export default function LandingPage() {
         <section style={{ maxWidth: 1160, margin: "0 auto", padding: "96px 28px" }}>
           <div style={{ textAlign: "center", marginBottom: 52 }}>
             <h2 style={{ fontSize: 36, fontWeight: 800, letterSpacing: "-0.04em", color: "#fafafa", marginBottom: 14 }}>No apps. No group chats.</h2>
-            <p style={{ fontSize: 14, color: "#3f3f46" }}>Three steps from couch to field.</p>
+            <p style={{ fontSize: 14, color: "#8d8d8d" }}>Three steps from couch to field.</p>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
             {features.map((f) => (
@@ -244,7 +243,7 @@ export default function LandingPage() {
                   {f.num}
                 </div>
                 <h3 style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em", color: "#fafafa", marginBottom: 10 }}>{f.title}</h3>
-                <p style={{ fontSize: 13, color: "#3f3f46", lineHeight: 1.7 }}>{f.desc}</p>
+                <p style={{ fontSize: 13, color: "#8d8d8d", lineHeight: 1.7 }}>{f.desc}</p>
               </div>
             ))}
           </div>
@@ -257,7 +256,7 @@ export default function LandingPage() {
             <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 20 }}>
               {["#2a2a2a", "#2a2a2a", "#2a2a2a"].map((c, i) => <div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: c }} />)}
               <div style={{ flex: 1, height: 24, background: "#111", border: "1px solid #1e1e1e", borderRadius: 6, marginLeft: 8, display: "flex", alignItems: "center", paddingLeft: 12 }}>
-                <span style={{ fontSize: 11, color: "#2a2a2a" }}>openmatch.gg/dashboard</span>
+                <span style={{ fontSize: 11, color: "#6d6d6d" }}>openmatch.gg/dashboard</span>
               </div>
             </div>
 
@@ -265,7 +264,7 @@ export default function LandingPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 240px", gap: 16 }}>
               <div>
                 <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.03em", color: "#fafafa", marginBottom: 4 }}>Hey, Jordan</div>
-                <div style={{ fontSize: 11, color: "#3f3f46", marginBottom: 16 }}>Ready up per team to let nearby players find you</div>
+                <div style={{ fontSize: 11, color: "#8d8d8d", marginBottom: 16 }}>Ready up per team to let nearby players find you</div>
                 {[
                   { sport: "SOCCER", color: "#4ade80", title: "Intermediate 5v5 · FDR Park", time: "18 min ago" },
                   { sport: "BASKETBALL", color: "#fb923c", title: "Competitive 3v3 · Palumbo Rec", time: "2 hrs ago" },
@@ -335,7 +334,7 @@ export default function LandingPage() {
         <section style={{ borderTop: "1px solid #141414", padding: "96px 28px", textAlign: "center", position: "relative" }}>
           <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: 500, height: 300, background: "radial-gradient(circle, rgba(16,185,129,0.07), transparent 70%)", borderRadius: "50%", pointerEvents: "none" }} />
           <h2 style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.04em", color: "#fafafa", marginBottom: 16, position: "relative" }}>Ready to play?</h2>
-          <p style={{ fontSize: 14, color: "#3f3f46", marginBottom: 40, position: "relative" }}>Join thousands of players already on OpenMatch.</p>
+          <p style={{ fontSize: 14, color: "#8d8d8d", marginBottom: 40, position: "relative" }}>Join thousands of players already on OpenMatch.</p>
             <Link href="login/register" className="cta-primary" style={{ fontSize: 15, padding: "15px 40px", textDecoration: "none" }}>
                 Create your account
             </Link>
@@ -346,9 +345,9 @@ export default function LandingPage() {
           <div style={{ maxWidth: 1160, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ width: 22, height: 22, borderRadius: 6, background: "#34d399", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 8, color: "#080808" }}>OM</div>
-              <span style={{ fontSize: 13, color: "#3f3f46" }}>OpenMatch</span>
+              <span style={{ fontSize: 13, color: "#8d8d8d" }}>OpenMatch</span>
             </div>
-            <div style={{ fontSize: 12, color: "#222" }}>© 2025 OpenMatch. Philadelphia, PA.</div>
+            <div style={{ fontSize: 12, color: "#8d8d8d" }}>© 2026 OpenMatch. Philadelphia, PA.</div>
           </div>
         </footer>
       </div>

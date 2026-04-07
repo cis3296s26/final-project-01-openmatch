@@ -199,6 +199,7 @@ class MatchPostUpdate(BaseModel):
     skill: Optional[str] = Field(default=None, max_length=50)
     location: Optional[str] = Field(default=None, max_length=100)
     note: Optional[str] = Field(default=None, max_length=500)
+    
 class ProfileSportCreate(BaseModel):
     sport_id: int
 
@@ -225,6 +226,20 @@ class TeamProfile(BaseModel):
     members: list[TeamMember]
     created_at: datetime
     member_count: int
+
+class Team(BaseModel):
+    id: int
+    name: str
+    sport_id: int
+    city: str
+
+class TeamCreateForm(BaseModel):
+    name: str
+    sport_id: int
+    city: str
+
+class joinTeam(BaseModel):
+    role: str
 
 def init_db() -> None:
     with engine.begin() as conn:
@@ -277,7 +292,8 @@ def init_db() -> None:
                     id SERIAL PRIMARY KEY,
                     name TEXT NOT NULL,
                     sport_id INT NOT NULL REFERENCES sports(id),
-                    city TEXT NOT NULL
+                    city TEXT NOT NULL,
+                    UNIQUE(name, sport_id)
                 );
 
                 CREATE TABLE IF NOT EXISTS team_members (
@@ -634,6 +650,25 @@ def get_user_profile_sports(user_id: int, current_user: dict = Depends(get_curre
 
     return [dict(row) for row in rows]
 
+@app.get("/users/{user_id}/teams")
+def get_user_profile_sports(user_id: int, current_user: dict = Depends(get_current_user)):
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT t.id, t.name, t.sport_id, t.city, s.name AS sport
+                FROM team_members tm
+                JOIN teams t ON tm.team_id = t.id
+                JOIN sports s ON t.sport_id = s.id
+                WHERE tm.user_id = :user_id
+                """
+            ),
+            {
+                "user_id": user_id
+            }
+        ).mappings().all()
+
+    return [dict(row) for row in rows]
 
 @app.post("/profile-sports", status_code=201)
 def create_profile_sport(payload: ProfileSportCreate, current_user: dict = Depends(get_current_user)):
@@ -758,30 +793,101 @@ def login(payload: UserLogin):
 
 
 @app.post("/teams")
-async def create_team(payload: dict):
+async def create_team(payload: TeamCreateForm):
     with engine.begin() as conn:
-        res = conn.execute(
-            text("INSERT INTO teams(name, sport, city) VALUES (:n,:s,:c) RETURNING id"),
-            {"n": payload["name"], "s": payload["sport"], "c": payload["city"]},
-        )
-        team_id = res.scalar_one()
+        try: 
+            res = conn.execute(
+                text(
+                    """
+                    INSERT INTO teams(name, sport_id, city)
+                    VALUES (:name, :sport_id, :city)
+                    RETURNING id
+                    """
+                ),
+                {"name": payload.name, "sport_id": payload.sport_id, "city": payload.city},
+            )
+            team_id = res.scalar_one()
 
-    r.hset(f"team:{team_id}:presence", mapping={"status": "Offline", "updated_at": now_iso()})
+            r.hset(f"team:{team_id}:presence", mapping={"status": "Offline", "updated_at": now_iso()})
 
-    await manager.broadcast({"type": "team_created", "team_id": team_id})
-    return {"id": team_id}
+            await manager.broadcast({"type": "team_created", "team_id": team_id})
+            return {"id": team_id}
+        except IntegrityError:
+            raise HTTPException(status_code=400, detail="A team with this name and sport already exist")
 
 
 @app.get("/teams")
 def list_teams():
     with engine.begin() as conn:
-        rows = conn.execute(text("SELECT id, name, sport, city FROM teams ORDER BY id DESC")).mappings().all()
+        rows = conn.execute(
+            text(
+                """
+                SELECT t.id, t.name, t.sport_id, t.city, s.name AS sport
+                FROM teams t
+                JOIN sports s ON t.sport_id = s.id
+                ORDER BY id DESC
+                """
+            )
+        ).mappings().all()
 
     teams = []
     for row in rows:
         pres = r.hgetall(f"team:{row['id']}:presence") or {"status": "Offline", "updated_at": None}
         teams.append({**row, "presence": pres})
     return teams
+
+@app.post("/teams/{team_id}/join")
+async def join_team(team_id: int, payload: joinTeam, current_user: dict = Depends(get_current_user)):
+    with engine.begin() as conn:
+        user_id = int(current_user["sub"])
+
+        try:
+            row = conn.execute(
+                text(
+                    """
+                    INSERT INTO team_members (user_id, team_id, sport_id, role)
+                    SELECT :user_id, t.id, t.sport_id, :role
+                    FROM teams t
+                    WHERE t.id = :team_id
+                    RETURNING id, user_id, team_id, sport_id, role, joined_at
+                    """
+                ),
+                {
+                    "user_id": user_id,
+                    "team_id": team_id,
+                    "role": payload.role
+                },
+            ).mappings().one()
+
+            return row
+        except IntegrityError:
+            raise HTTPException(status_code=400, detail="User is already a member of this team")
+        
+@app.post("/teams/{team_id}/leave")
+async def join_team(team_id: int, current_user: dict = Depends(get_current_user)):
+    with engine.begin() as conn:
+        user_id = int(current_user["sub"])
+
+        try:
+            row = conn.execute(
+                text(
+                    """
+                    DELETE FROM team_members
+                    WHERE (user_id = :user_id) AND (team_id = :team_id)
+                    """
+                ),
+                {
+                    "user_id": user_id,
+                    "team_id": team_id,
+                },
+            )
+
+            if row.rowcount == 0:
+                raise HTTPException(status_code=400, detail="User is not a member of this team")
+
+            return {"ok": True}
+        except IntegrityError:
+            raise HTTPException(status_code=400, detail="Bad Request")
 
 
 @app.post("/teams/{team_id}/presence")
