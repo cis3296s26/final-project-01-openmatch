@@ -113,6 +113,7 @@ export default function OpenMatchDashboard() {
 
   const [formSportId, setFormSportId] = useState<number | null>(null);
   const [formTeamId, setFormTeamId] = useState<number | null>(null);
+  const [formPostType, setFormPostType] = useState<"individual" | "team">("individual");
   const [formTitle, setFormTitle] = useState("");
   const [formSkill, setFormSkill] = useState("Casual");
   const [formLocation, setFormLocation] = useState("");
@@ -189,6 +190,7 @@ export default function OpenMatchDashboard() {
     setEditingPost(null);
     setFormSportId(null);
     setFormTeamId(null);
+    setFormPostType("individual");
     setFormTitle("");
     setFormSkill("Casual");
     setFormLocation("");
@@ -218,6 +220,11 @@ export default function OpenMatchDashboard() {
   async function handleCreatePost() {
     if (!formSportId || !formTitle || !formSkill) {
       setPostMessage("Please fill in required fields");
+      return;
+    }
+
+    if (formPostType === "team" && !formTeamId) {
+      setPostMessage("Please select a team for team posts");
       return;
     }
 
@@ -316,9 +323,9 @@ export default function OpenMatchDashboard() {
   }
 
   const nearbyRequests = [
-    { initials: "MR", name: "Marco R.", desc: "Casual 7v7 — Clark Park turf", tags: ["Soccer", "Casual", "7v7"], time: "5m" },
-    { initials: "SP", name: "Sunrise Picklers", desc: "Doubles, any level welcome", tags: ["Pickleball", "Casual"], time: "12m" },
-    { initials: "AL", name: "Ash L.", desc: "Street tennis doubles — LOVE Park", tags: ["Tennis", "Intermediate"], time: "31m" },
+    { initials: "MR", name: "Marco R.", desc: "Casual 7v7 — Clark Park turf", tags: ["Soccer", "Casual", "7v7"], time: "5m", isTeam: false },
+    { initials: "SP", name: "Sunrise Picklers", desc: "Doubles, any level welcome", tags: ["Pickleball", "Casual"], time: "12m", isTeam: true },
+    { initials: "AL", name: "Ash L.", desc: "Street tennis doubles — LOVE Park", tags: ["Tennis", "Intermediate"], time: "31m", isTeam: false },
   ];
 
   const recentMatches = [
@@ -536,9 +543,21 @@ export default function OpenMatchDashboard() {
                       <div key={post.id} className="card" style={{ padding: "20px 22px" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 16 }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
                               <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", color: sportColor }}>
                                 {post.sport_name.toUpperCase()}
+                              </span>
+                              <span style={{ color: "#222" }}>·</span>
+                              <span style={{
+                                fontSize: 10,
+                                fontWeight: 600,
+                                padding: "2px 8px",
+                                borderRadius: 5,
+                                background: post.team_id ? "rgba(96,165,250,0.1)" : "rgba(168,85,247,0.1)",
+                                border: `1px solid ${post.team_id ? "rgba(96,165,250,0.2)" : "rgba(168,85,247,0.2)"}`,
+                                color: post.team_id ? "#93c5fd" : "#c4b5fd",
+                              }}>
+                                {post.team_id ? "Team" : "Individual"}
                               </span>
                               <span style={{ color: "#222" }}>·</span>
                               <span style={{ fontSize: 11, color: "#3f3f46" }}>{post.skill}</span>
@@ -635,6 +654,17 @@ export default function OpenMatchDashboard() {
                           </div>
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, gap: 8 }}>
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                              <span style={{
+                                padding: "3px 8px",
+                                borderRadius: 6,
+                                fontSize: 10,
+                                fontWeight: 600,
+                                background: req.isTeam ? "rgba(96,165,250,0.1)" : "rgba(168,85,247,0.1)",
+                                border: `1px solid ${req.isTeam ? "rgba(96,165,250,0.2)" : "rgba(168,85,247,0.2)"}`,
+                                color: req.isTeam ? "#93c5fd" : "#c4b5fd",
+                              }}>
+                                {req.isTeam ? "Team" : "Individual"}
+                              </span>
                               {req.tags.map((tag, ti) => (
                                 <span key={tag} style={{ padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 500, background: ti === 0 ? "rgba(96,165,250,0.07)" : "#111", border: `1px solid ${ti === 0 ? "rgba(96,165,250,0.18)" : "#1e1e1e"}`, color: ti === 0 ? "#93c5fd" : "#52525b" }}>
                                   {tag}
@@ -723,30 +753,107 @@ export default function OpenMatchDashboard() {
               {!editingPost && (
                 <>
                   <div>
-                    <label className="form-label">Sport *</label>
-                    <select
-                      className="form-input"
-                      value={formSportId ?? ""}
-                      onChange={(e) => setFormSportId(e.target.value ? Number(e.target.value) : null)}
-                    >
-                      <option value="">Select a sport...</option>
-                      {sports.map((sport) => (
-                        <option key={sport.id} value={sport.id}>{sport.name}</option>
-                      ))}
-                    </select>
+                    <label className="form-label">Post Type *</label>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormPostType("individual");
+                          setFormTeamId(null);
+                          setFormSportId(null);
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: "10px 16px",
+                          borderRadius: 8,
+                          border: formPostType === "individual" ? "1px solid rgba(168,85,247,0.4)" : "1px solid #1e1e1e",
+                          background: formPostType === "individual" ? "rgba(168,85,247,0.1)" : "#111",
+                          color: formPostType === "individual" ? "#c4b5fd" : "#52525b",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          transition: "all 0.15s",
+                        }}
+                      >
+                        Individual
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormPostType("team");
+                          setFormSportId(null);
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: "10px 16px",
+                          borderRadius: 8,
+                          border: formPostType === "team" ? "1px solid rgba(96,165,250,0.4)" : "1px solid #1e1e1e",
+                          background: formPostType === "team" ? "rgba(96,165,250,0.1)" : "#111",
+                          color: formPostType === "team" ? "#93c5fd" : "#52525b",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          transition: "all 0.15s",
+                        }}
+                      >
+                        Team
+                      </button>
+                    </div>
                   </div>
 
-                  {teams.length > 0 && (
+                  {formPostType === "team" && (
                     <div>
-                      <label className="form-label">Post as Team (optional)</label>
+                      <label className="form-label">Select Team *</label>
                       <select
                         className="form-input"
                         value={formTeamId ?? ""}
-                        onChange={(e) => setFormTeamId(e.target.value ? Number(e.target.value) : null)}
+                        onChange={(e) => {
+                          const teamId = e.target.value ? Number(e.target.value) : null;
+                          setFormTeamId(teamId);
+                          
+                          if (teamId) {
+                            const selectedTeam = teams.find(t => t.id === teamId);
+                            if (selectedTeam) {
+                              const matchingSport = sports.find(s => s.name === selectedTeam.sport);
+                              if (matchingSport) {
+                                setFormSportId(matchingSport.id);
+                              }
+                            }
+                          } else {
+                            setFormSportId(null);
+                          }
+                        }}
                       >
-                        <option value="">Post as myself</option>
-                        {teams.map((team) => (
-                          <option key={team.id} value={team.id}>{team.name}</option>
+                        <option value="">Choose a team...</option>
+                        {teams.length > 0 ? (
+                          teams.map((team) => (
+                            <option key={team.id} value={team.id}>{team.name} ({team.sport})</option>
+                          ))
+                        ) : (
+                          <option value="" disabled>No teams available</option>
+                        )}
+                      </select>
+                      {teams.length === 0 && (
+                        <p style={{ fontSize: 11, color: "#71717a", marginTop: 6 }}>
+                          You need to create or join a team first.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {formPostType === "individual" && (
+                    <div>
+                      <label className="form-label">Sport *</label>
+                      <select
+                        className="form-input"
+                        value={formSportId ?? ""}
+                        onChange={(e) => setFormSportId(e.target.value ? Number(e.target.value) : null)}
+                      >
+                        <option value="">Select a sport...</option>
+                        {sports.map((sport) => (
+                          <option key={sport.id} value={sport.id}>{sport.name}</option>
                         ))}
                       </select>
                     </div>
