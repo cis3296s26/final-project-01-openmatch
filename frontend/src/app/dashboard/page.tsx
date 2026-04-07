@@ -119,6 +119,7 @@ export default function OpenMatchDashboard() {
   const [formLocation, setFormLocation] = useState("");
   const [formNote, setFormNote] = useState("");
   const [formExpiration, setFormExpiration] = useState(60);
+  const [formPlayersPerSide, setFormPlayersPerSide] = useState(5);
   const [formSubmitting, setFormSubmitting] = useState(false);
 
   const [teamStatuses, setTeamStatuses] = useState<Record<string, boolean>>({
@@ -196,6 +197,7 @@ export default function OpenMatchDashboard() {
     setFormLocation("");
     setFormNote("");
     setFormExpiration(60);
+    setFormPlayersPerSide(5);
     setPostMessage("");
     setShowPostModal(true);
   }
@@ -243,6 +245,7 @@ export default function OpenMatchDashboard() {
           location: formLocation || null,
           note: formNote || null,
           expires_in_minutes: formExpiration,
+          players_per_side: formPlayersPerSide,
         }),
       });
 
@@ -909,18 +912,34 @@ export default function OpenMatchDashboard() {
               </div>
 
               {!editingPost && (
-                <div>
-                  <label className="form-label">Expires In</label>
-                  <select
-                    className="form-input"
-                    value={formExpiration}
-                    onChange={(e) => setFormExpiration(Number(e.target.value))}
-                  >
-                    {EXPIRATION_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
+                <>
+                  <div>
+                    <label className="form-label">Players Per Side *</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      min={1}
+                      max={50}
+                      value={formPlayersPerSide}
+                      onChange={(e) => setFormPlayersPerSide(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+                    />
+                    <p style={{ fontSize: 11, color: "#52525b", marginTop: 4 }}>
+                      How many players each side needs before the 5-minute ready window starts
+                    </p>
+                  </div>
+                  <div>
+                    <label className="form-label">Expires In</label>
+                    <select
+                      className="form-input"
+                      value={formExpiration}
+                      onChange={(e) => setFormExpiration(Number(e.target.value))}
+                    >
+                      {EXPIRATION_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </>
               )}
 
               {postMessage && (
