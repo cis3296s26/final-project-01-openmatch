@@ -798,6 +798,24 @@ def login(payload: UserLogin):
 @app.post("/teams")
 async def create_team(payload: TeamCreateForm, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
+        try: 
+            row = conn.execute(
+                text(
+                    """
+                    WITH inserted_team AS (
+                        INSERT INTO teams (name, sport_id, city)
+                        VALUES (:name, :sport_id, :city)
+                        RETURNING id, name, sport_id, city
+                    )
+                    SELECT it.id, it.name, it.city, it.sport_id, s.name AS sport
+                    FROM inserted_team it
+                    JOIN sports s ON it.sport_id = s.id;
+                    """
+                ),
+                {"name": payload.name, "sport_id": payload.sport_id, "city": payload.city},
+            ).mappings().one()
+            result = dict(row)
+            team_id = result["id"]
         user_id = int(current_user["sub"])
 
         team_row = conn.execute(
@@ -811,6 +829,17 @@ async def create_team(payload: TeamCreateForm, current_user: dict = Depends(get_
 
         team_id = team_row["id"]
 
+
+            await manager.broadcast({"type": "team_created", "team_id": team_id})
+            return {
+                "name": result["name"],
+                "id": result["id"],
+                "sport_id": result["sport_id"],
+                "city": result["city"],
+                "sport": result["sport"]
+            }
+        except IntegrityError:
+            raise HTTPException(status_code=400, detail="A team with this name and sport already exist")
         conn.execute(
             text("""
                 INSERT INTO team_stats (team_id, team_mmr, matches_played, wins, losses, ties)
