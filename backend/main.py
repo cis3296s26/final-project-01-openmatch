@@ -267,7 +267,8 @@ def init_db() -> None:
                     id SERIAL PRIMARY KEY,
                     name TEXT NOT NULL,
                     sport_id INT NOT NULL REFERENCES sports(id),
-                    city TEXT NOT NULL
+                    city TEXT NOT NULL,
+                    UNIQUE(name, sport_id)
                 );
 
                 CREATE TABLE IF NOT EXISTS team_members (
@@ -769,22 +770,25 @@ def login(payload: UserLogin):
 @app.post("/teams")
 async def create_team(payload: TeamCreateForm):
     with engine.begin() as conn:
-        res = conn.execute(
-            text(
-                """
-                INSERT INTO teams(name, sport_id, city)
-                VALUES (:name, :sport_id, :city)
-                RETURNING id
-                """
-            ),
-            {"name": payload.name, "sport_id": payload.sport_id, "city": payload.city},
-        )
-        team_id = res.scalar_one()
+        try: 
+            res = conn.execute(
+                text(
+                    """
+                    INSERT INTO teams(name, sport_id, city)
+                    VALUES (:name, :sport_id, :city)
+                    RETURNING id
+                    """
+                ),
+                {"name": payload.name, "sport_id": payload.sport_id, "city": payload.city},
+            )
+            team_id = res.scalar_one()
 
-    r.hset(f"team:{team_id}:presence", mapping={"status": "Offline", "updated_at": now_iso()})
+            r.hset(f"team:{team_id}:presence", mapping={"status": "Offline", "updated_at": now_iso()})
 
-    await manager.broadcast({"type": "team_created", "team_id": team_id})
-    return {"id": team_id}
+            await manager.broadcast({"type": "team_created", "team_id": team_id})
+            return {"id": team_id}
+        except IntegrityError:
+            raise HTTPException(status_code=400, detail="A team with this name and sport already exist")
 
 
 @app.get("/teams")
