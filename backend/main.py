@@ -9,6 +9,7 @@ from typing import List, Optional
 from dotenv import load_dotenv
 import redis
 import resend
+import requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, text
@@ -47,6 +48,8 @@ MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 EMAIL_FROM = os.getenv("EMAIL_FROM", "OpenMatch <onboarding@resend.dev>")
+
+YELP_API_KEY = os.getenv("YELP_API_KEY")
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
@@ -1085,6 +1088,36 @@ async def delete_post(post_id: int, current_user: dict = Depends(get_current_use
     await manager.broadcast({"type": "post_deleted", "post_id": post_id})
 
     return {"message": "Post deleted successfully"}
+
+
+@app.get("/fields/search")
+def search_fields(location: str, sort_by: str = "best_match"):
+    if not YELP_API_KEY:
+        raise HTTPException(status_code=500, detail="Yelp API key not configured")
+    
+    if not location:
+        raise HTTPException(status_code=400, detail="Location is required")
+    
+    url = "https://api.yelp.com/v3/businesses/search"
+    headers = {"Authorization": f"Bearer {YELP_API_KEY}"}
+    params = {
+        "location": location,
+        "term": "sports fields and facilities",
+        "sort_by": sort_by,
+        "limit": 20,
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail="Failed to fetch data from Yelp API"
+            )
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Error connecting to Yelp API: {str(e)}")
 
 
 @app.websocket("/ws")
