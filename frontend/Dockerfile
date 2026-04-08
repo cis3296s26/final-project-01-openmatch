@@ -15,11 +15,15 @@ ENV NEXT_PUBLIC_WS_BASE_URL=$NEXT_PUBLIC_WS_BASE_URL
 
 RUN npm run build
 
-FROM nginx:alpine
+FROM node:20-alpine AS runner
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=builder /app/out /usr/share/nginx/html
+WORKDIR /app
+ENV NODE_ENV=production
 
-EXPOSE 10000
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
 
-CMD ["sh", "-c", "sed -i 's/listen 80;/listen 10000;/g' /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
+EXPOSE 3000
+
+CMD ["node", "server.js"]
