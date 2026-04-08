@@ -116,6 +116,29 @@ def init_db() -> None:
                     ('Volleyball'), ('Flag Football'), ('Badminton'), ('Softball'),
                     ('Ultimate Frisbee'), ('Hockey'), ('Rugby'), ('Lacrosse')
                 ON CONFLICT (name) DO NOTHING;
+
+                ALTER TABLE match_posts
+                    ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open',
+                    ADD COLUMN IF NOT EXISTS players_per_side INT NOT NULL DEFAULT 5,
+                    ADD COLUMN IF NOT EXISTS locked_by_team_id INT REFERENCES teams(id) ON DELETE SET NULL,
+                    ADD COLUMN IF NOT EXISTS locked_by_user_id INT REFERENCES users(id) ON DELETE SET NULL,
+                    ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ,
+                    ADD COLUMN IF NOT EXISTS ready_deadline_at TIMESTAMPTZ;
+
+                CREATE TABLE IF NOT EXISTS match_post_participants (
+                    id SERIAL PRIMARY KEY,
+                    match_post_id INT NOT NULL REFERENCES match_posts(id) ON DELETE CASCADE,
+                    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    side TEXT NOT NULL,
+                    team_id INT REFERENCES teams(id) ON DELETE SET NULL,
+                    selected_for_match BOOLEAN NOT NULL DEFAULT FALSE,
+                    ready BOOLEAN NOT NULL DEFAULT FALSE,
+                    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE(match_post_id, user_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_match_post_participants_post_id
+                    ON match_post_participants(match_post_id);
                 """
             )
         )
