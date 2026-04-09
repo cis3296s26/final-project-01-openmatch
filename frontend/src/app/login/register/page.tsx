@@ -29,23 +29,26 @@ export default function RegisterPage() {
     const [confirmPassword, setConfirmPassword] = useState("");
 
     const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
-        e.preventDefault();
+    e.preventDefault();
+    console.log("submit fired");
 
-        if (formData.password !== confirmPassword) {
-            toast.error("Passwords do not match");
-            return;
-        }
-
-        try{
-            await registerUser(formData);
-            toast.success("User registered successfully");
-            router.push("../login");
-        }
-        catch (err) {
-            console.error(err);
-            toast.error(err instanceof Error ? err.message : "Failed to register user");
-        }
+    if (formData.password !== confirmPassword) {
+        console.log("password mismatch");
+        toast.error("Passwords do not match");
+        return;
     }
+
+    try {
+        console.log("sending request", formData);
+        await registerUser(formData);
+        console.log("register success");
+        toast.success("User registered successfully");
+        router.push("/login");
+    } catch (err) {
+        console.error("register failed", err);
+        toast.error(err instanceof Error ? err.message : "Failed to register user");
+    }
+};
 
     async function registerUser(data: RegisterInput) {
         const res = await fetch(`${API}/users`, {
