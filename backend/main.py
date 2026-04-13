@@ -14,6 +14,7 @@ from routes.auth import router as auth_router
 from routes.profiles import router as profiles_router
 from routes.teams import router as teams_router
 from routes.matches import router as matches_router
+from routes.live_matches import router as live_matches_router
 from routes.locations import router as locations_router
 from routes.websockets import router as websockets_router
 
@@ -60,5 +61,6 @@ app.include_router(auth_router)
 app.include_router(profiles_router)
 app.include_router(teams_router)
 app.include_router(matches_router)
+app.include_router(live_matches_router)
 app.include_router(locations_router)
 app.include_router(websockets_router)
