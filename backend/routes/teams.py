@@ -7,7 +7,7 @@ from core.security import get_current_user
 from core.websocket import manager
 
 from schemas.teams import TeamMember, TeamStats, TeamProfile, Team, TeamCreateForm, joinTeam
-from core.teams import validate_sport_profile_for_joining_team
+from core.teams import verify_user_has_sport_profile
 
 from utils.time import now_iso
 
@@ -21,7 +21,7 @@ async def create_team(payload: TeamCreateForm, current_user: dict = Depends(get_
             user_id = int(current_user["sub"])
             
             # Check if this user has a sports profile for the team being joined, prevent if true
-            if not validate_sport_profile_for_joining_team(conn, user_id, payload.sport_id):
+            if not verify_user_has_sport_profile(conn, user_id, payload.sport_id):
                 raise HTTPException(status_code=403, detail="You must create sport profile for this team's sport")
 
             row = conn.execute(
@@ -103,7 +103,7 @@ async def join_team(team_id: int, payload: joinTeam, current_user: dict = Depend
             user_id = int(current_user["sub"])
             
             # Check if this user has a sports profile for the team being joined, prevent if true
-            if not validate_sport_profile_for_joining_team(conn, user_id, payload.sport_id):
+            if not verify_user_has_sport_profile(conn, user_id, payload.sport_id):
                 raise HTTPException(status_code=403, detail="You must create sport profile for this team's sport")
 
             row = conn.execute(
