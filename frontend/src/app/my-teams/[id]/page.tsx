@@ -442,8 +442,9 @@ const recentResults = matches.slice(0, 10).map((m) => m.result === "win" ? "W" :
               </div>
             </div>
 
-            {/* TODO: show Edit button only if current user is captain */}
+          {members.some((m) => m.role === "captain" && m.user_id === user?.id) && (
             <button className="ghost-btn" style={{ alignSelf: "flex-start" }} onClick={openEditModal}>Edit Team</button>
+          )}
           </div>
 
           {/* Description */}
