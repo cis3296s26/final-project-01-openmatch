@@ -1,7 +1,7 @@
 "use client";
 
-import { authHeaders, clearAuth, getUser } from "@/lib/auth";
 import AuthGate from "@/components/AuthGate";
+import { authHeaders, clearAuth, getUser } from "@/lib/auth";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -115,7 +115,7 @@ export default function MyTeamsPage() {
     }
   }
 
-  async function handleJoinTeam(teamId: number, teamSportId: number) {
+  async function handleJoinTeam(teamId: number) {
     setJoiningTeamId(teamId);
     setActionMessage(null);
     try {
@@ -123,8 +123,7 @@ export default function MyTeamsPage() {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({
-          role: "member",
-          sport_id: teamSportId
+          role: "member"
         }),
       });
 
@@ -603,7 +602,7 @@ export default function MyTeamsPage() {
                             <button
                               className="join-btn"
                               disabled={isJoining}
-                              onClick={() => handleJoinTeam(team.id, team.sport_id)}
+                              onClick={() => handleJoinTeam(team.id)}
                             >
                               {isJoining ? "Joining..." : "Join"}
                             </button>

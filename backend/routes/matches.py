@@ -321,7 +321,7 @@ async def join_post(post_id: int, payload: MatchPostJoin, current_user: dict = D
         poster_team_id = int(post["team_id"])
 
         if team_id == poster_team_id:
-            side = "A"
+            side = "poster"
         else:
             # Lock in opponent team on first opposing join
             current_opponent = post["locked_by_team_id"]
@@ -338,7 +338,7 @@ async def join_post(post_id: int, payload: MatchPostJoin, current_user: dict = D
                 )
             elif int(current_opponent) != team_id:
                 raise HTTPException(status_code=403, detail="Another team has already claimed opponent side")
-            side = "B"
+            side = "opponent"
 
         mem = conn.execute(
             text("SELECT 1 FROM team_members WHERE user_id = :u AND team_id = :t"),
