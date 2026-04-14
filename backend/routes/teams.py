@@ -7,6 +7,7 @@ from core.security import get_current_user
 from core.websocket import manager
 
 from schemas.teams import TeamMember, TeamStats, TeamProfile, Team, TeamCreateForm, joinTeam
+from core.teams import validate_sport_profile_for_joining_team
 
 from utils.time import now_iso
 
@@ -16,6 +17,13 @@ router = APIRouter(tags=["teams"])
 async def create_team(payload: TeamCreateForm, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
         try: 
+            # define User Id
+            user_id = int(current_user["sub"])
+            
+            # Check if this user has a sports profile for the team being joined, prevent if true
+            if not validate_sport_profile_for_joining_team(conn, user_id, payload.sport_id):
+                raise HTTPException(status_code=403, detail="You must create sport profile for this team's sport")
+
             row = conn.execute(
                 text(
                     """
@@ -35,7 +43,6 @@ async def create_team(payload: TeamCreateForm, current_user: dict = Depends(get_
 
             # Define Team and UserID
             team_id = result["id"]
-            user_id = int(current_user["sub"])
 
             # Initialize team profile
             conn.execute(
@@ -91,9 +98,14 @@ def list_teams():
 @router.post("/teams/{team_id}/join")
 async def join_team(team_id: int, payload: joinTeam, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
-        user_id = int(current_user["sub"])
-
         try:
+            # Define User Id
+            user_id = int(current_user["sub"])
+            
+            # Check if this user has a sports profile for the team being joined, prevent if true
+            if not validate_sport_profile_for_joining_team(conn, user_id, payload.sport_id):
+                raise HTTPException(status_code=403, detail="You must create sport profile for this team's sport")
+
             row = conn.execute(
                 text(
                     """
@@ -113,7 +125,7 @@ async def join_team(team_id: int, payload: joinTeam, current_user: dict = Depend
 
             return row
         except IntegrityError:
-            raise HTTPException(status_code=400, detail="User is already a member of this team")
+            raise HTTPException(status_code=400, detail="User is already a member of this team or another team of the same sport")
         
 @router.post("/teams/{team_id}/leave")
 async def leave_team(team_id: int, current_user: dict = Depends(get_current_user)):

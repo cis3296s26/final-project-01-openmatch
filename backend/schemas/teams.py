@@ -40,3 +40,4 @@ class TeamCreateForm(BaseModel):
 
 class joinTeam(BaseModel):
     role: str
+    sport_id: int
