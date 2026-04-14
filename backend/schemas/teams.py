@@ -40,3 +40,6 @@ class TeamCreateForm(BaseModel):
 
 class joinTeam(BaseModel):
     role: str
+
+class editTeam(BaseModel):
+    name: str
