@@ -114,7 +114,7 @@ export default function MyTeamsPage() {
     }
   }
 
-  async function handleJoinTeam(teamId: number) {
+  async function handleJoinTeam(teamId: number, teamSportId: number) {
     setJoiningTeamId(teamId);
     setActionMessage(null);
     try {
@@ -122,7 +122,8 @@ export default function MyTeamsPage() {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({
-          role: "member"
+          role: "member",
+          sport_id: teamSportId
         }),
       });
 
@@ -597,7 +598,7 @@ export default function MyTeamsPage() {
                             <button
                               className="join-btn"
                               disabled={isJoining}
-                              onClick={() => handleJoinTeam(team.id)}
+                              onClick={() => handleJoinTeam(team.id, team.sport_id)}
                             >
                               {isJoining ? "Joining..." : "Join"}
                             </button>
