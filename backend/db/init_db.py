@@ -201,9 +201,57 @@ def init_db() -> None:
                     joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     UNIQUE(match_post_id, user_id)
                 );
+                
+                CREATE TABLE IF NOT EXISTS match_history (
+                    id SERIAL PRIMARY KEY,
+                    original_match_id INT,
+                    original_post_id INT,
+                    sport_id INT NOT NULL REFERENCES sports(id),
+                    queue_type TEXT NOT NULL CHECK (queue_type IN ('solo', 'team')),
+
+                    title TEXT,
+                    skill TEXT,
+                    is_competitive BOOLEAN NOT NULL DEFAULT FALSE,
+                    location TEXT,
+                    note TEXT,
+
+                    side_a_team_id INT REFERENCES teams(id) ON DELETE SET NULL,
+                    side_b_team_id INT REFERENCES teams(id) ON DELETE SET NULL,
+                    winner_side TEXT CHECK (winner_side IN ('A', 'B')),
+                    winner_team_id INT REFERENCES teams(id) ON DELETE SET NULL,
+
+                    score_side_a INT NOT NULL DEFAULT 0,
+                    score_side_b INT NOT NULL DEFAULT 0,
+
+                    result_method TEXT,
+                    started_at TIMESTAMPTZ,
+                    ended_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS match_history_players (
+                    id SERIAL PRIMARY KEY,
+                    match_history_id INT NOT NULL REFERENCES match_history(id) ON DELETE CASCADE,
+                    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    side TEXT NOT NULL CHECK (side IN ('A', 'B')),
+                    team_id INT REFERENCES teams(id) ON DELETE SET NULL,
+                    mmr_before INT,
+                    mmr_after INT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_match_history_players_user_id
+                    ON match_history_players(user_id);
+
+                CREATE INDEX IF NOT EXISTS idx_match_history_created_at
+                    ON match_history(created_at DESC);
+                
 
                 CREATE INDEX IF NOT EXISTS idx_match_post_participants_post_id
                     ON match_post_participants(match_post_id);
+
+                ALTER TABLE match_posts
+                    ADD COLUMN IF NOT EXISTS is_competitive BOOLEAN NOT NULL DEFAULT FALSE;    
                 """
             )
         )

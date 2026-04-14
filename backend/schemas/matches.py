@@ -7,6 +7,7 @@ class MatchPostCreate(BaseModel):
     team_id: Optional[int] = None
     title: str = Field(..., min_length=1, max_length=100)
     skill: str = Field(..., min_length=1, max_length=50)
+    is_competitive: bool = False
     location: Optional[str] = Field(default=None, max_length=100)
     note: Optional[str] = Field(default=None, max_length=500)
     expires_in_minutes: int = Field(..., gt=0, le=1440)
@@ -37,6 +38,7 @@ class MatchPostParticipantOut(BaseModel):
     selected_for_match: bool
     ready: bool
     joined_at: datetime
+    team_name: Optional[str] = None
 
 
 class MatchPostDetailOut(BaseModel):
