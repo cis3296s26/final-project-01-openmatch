@@ -6,7 +6,7 @@ from core.database import engine, r
 from core.security import get_current_user
 from core.websocket import manager
 
-from core.teams import verify_user_has_sport_profile
+from core.teams import verify_user_has_sport_profile, is_captain
 from schemas.teams import TeamMember, TeamStats, TeamProfile, Team, TeamCreateForm, joinTeam, editTeam
 
 from utils.time import now_iso
@@ -228,7 +228,11 @@ async def join_team(team_id: int, payload: joinTeam, current_user: dict = Depend
 @router.post("/teams/{team_id}/leave")
 async def leave_team(team_id: int, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
-        user_id = int(current_user["sub"])
+        user_id = int(current_user["sub"]);
+
+        # If the user is the captain, will need to pass on ownership. Defaults to the most senior team member
+        captain_is_leaving = is_captain(conn, user_id, team_id);
+    
 
         try:
             row = conn.execute(
@@ -246,6 +250,31 @@ async def leave_team(team_id: int, current_user: dict = Depends(get_current_user
 
             if row.rowcount == 0:
                 raise HTTPException(status_code=400, detail="User is not a member of this team")
+            
+            # If the captain has left, update the next users role to captain
+            if (captain_is_leaving):
+                senior_player = conn.execute(
+                    text(
+                        """
+                        SELECT user_id FROM team_members
+                        WHERE team_id = :team_id
+                        ORDER BY joined_at ASC
+                        LIMIT 1
+                        """
+                    ),
+                    { "team_id": team_id }
+                ).mappings().first()
+
+                conn.execute(
+                    text(
+                        """
+                        UPDATE team_members
+                        SET role='captain'
+                        WHERE user_id = :user_id
+                        """
+                    ),
+                    { "user_id": senior_player.user_id }
+                )
 
             return {"ok": True}
         except IntegrityError:
