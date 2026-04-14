@@ -172,7 +172,6 @@ export default function TeamProfilePage() {
 
     async function handleSaveName() {
         if (!team || !editName.trim()) return;
-        // 
         setEditSaving(true);
         setEditError(null);
         try {
@@ -196,25 +195,25 @@ export default function TeamProfilePage() {
     }
 
     async function handleDeleteTeam() {
-    //     if (!team) return;
-    //     setEditSaving(true);
-    //     setDeleteError(null);
-    //     try {
-    //         const res = await fetch(`${API}/teams/${team.id}`, {
-    //             method: "DELETE",
-    //             headers: authHeaders(),
-    //         });
-    //         if (res.ok) {
-    //             router.push("/my-teams");
-    //         } else {
-    //             const data = await res.json().catch(() => ({}));
-    //             setDeleteError(data.message || "Failed to delete team.");
-    //         }
-    //     } catch {
-    //         setDeleteError("Network error. Please try again.");
-    //     } finally {
-    //         setEditSaving(false);
-    //     }
+        if (!team) return;
+        setEditSaving(true);
+        setDeleteError(null);
+        try {
+            const res = await fetch(`${API}/teams/${team.id}`, {
+                method: "DELETE",
+                headers: authHeaders(),
+            });
+            if (res.ok) {
+                router.push("/my-teams");
+            } else {
+                const data = await res.json().catch(() => ({}));
+                setDeleteError(data.message || "Failed to delete team.");
+            }
+        } catch {
+            setDeleteError("Network error. Please try again.");
+        } finally {
+            setEditSaving(false);
+        }
     }
 
     const sportColor = team ? (SPORT_COLORS[team.sport] || "#4ade80") : "#4ade80";
