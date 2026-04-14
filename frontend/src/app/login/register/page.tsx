@@ -2,8 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
+import { getToken } from "@/lib/auth";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
@@ -17,6 +18,10 @@ type RegisterInput = {
 
 export default function RegisterPage() {
     const router = useRouter();
+
+    useEffect(() => {
+        if (getToken()) router.replace("/dashboard");
+    }, [router]);
 
     const [formData, setFormData] = useState<RegisterInput>({
         first_name: "",
@@ -58,7 +63,8 @@ export default function RegisterPage() {
         });
 
         if(!res.ok){
-            throw new Error("Failed to register user");
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.detail || "Failed to register user");
         }
 
         const user = await res.json();

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { authHeaders, clearAuth, getUser } from "@/lib/auth";
+import AuthGate from "@/components/AuthGate";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
@@ -136,6 +137,15 @@ export default function MatchLobbyPage() {
     } catch { setMsg("Backend not reachable."); }
   }
 
+  async function leavePost() {
+    setMsg("");
+    try {
+      const res = await fetch(`${API}/posts/${postId}/leave`, { method: "POST", headers: authHeaders() });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); setMsg(err.detail || "Failed to leave."); return; }
+      await refresh();
+    } catch { setMsg("Backend not reachable."); }
+  }
+
   async function readyUp() {
     setMsg("");
     try {
@@ -163,7 +173,7 @@ export default function MatchLobbyPage() {
   const sideBParticipants = post?.participants.filter((p) => p.side === sideBKey) ?? [];
 
   return (
-    <>
+    <AuthGate>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -575,11 +585,23 @@ export default function MatchLobbyPage() {
                     <div style={{ fontSize: 11, color: "#3f3f46", marginTop: 4 }}>Waiting for other players...</div>
                   </div>
                 )}
+
+                {myParticipant && !isConfirmed && (
+                  <button
+                    className="ghost-btn"
+                    onClick={leavePost}
+                    style={{ width: "100%", padding: "10px 16px", fontSize: 12, color: "#ef4444", borderColor: "#2a1515" }}
+                    onMouseOver={(e) => { e.currentTarget.style.borderColor = "#ef4444"; e.currentTarget.style.background = "rgba(239,68,68,0.04)"; }}
+                    onMouseOut={(e) => { e.currentTarget.style.borderColor = "#2a1515"; e.currentTarget.style.background = "transparent"; }}
+                  >
+                    Leave match
+                  </button>
+                )}
               </aside>
             </div>
           )}
         </main>
       </div>
-    </>
+    </AuthGate>
   );
 }
