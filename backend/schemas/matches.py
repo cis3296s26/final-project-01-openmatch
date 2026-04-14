@@ -9,19 +9,15 @@ class MatchPostCreate(BaseModel):
     skill: str = Field(..., min_length=1, max_length=50)
     location: Optional[str] = Field(default=None, max_length=100)
     note: Optional[str] = Field(default=None, max_length=500)
-    expires_in_minutes: int
+    expires_in_minutes: int = Field(..., gt=0, le=1440)
     players_per_side: int = Field(default=5, ge=1, le=50)
 
 
 class MatchPostUpdate(BaseModel):
-    title: Optional[str] = Field(default=None, max_length=100)
-    skill: Optional[str] = Field(default=None, max_length=50)
+    title: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    skill: Optional[str] = Field(default=None, min_length=1, max_length=50)
     location: Optional[str] = Field(default=None, max_length=100)
     note: Optional[str] = Field(default=None, max_length=500)
-
-class MatchPostLock(BaseModel):
-    team_id: int
-
 
 class MatchPostJoin(BaseModel):
     team_id: Optional[int] = None
@@ -89,9 +85,9 @@ class MatchStartConfirmationOut(BaseModel):
 
 class MatchResultReportCreate(BaseModel):
     winner_side: Literal["A", "B"]
-    score_side_a: Optional[int] = None
-    score_side_b: Optional[int] = None
-    note: Optional[str] = None
+    score_side_a: Optional[int] = Field(default=None, ge=0)
+    score_side_b: Optional[int] = Field(default=None, ge=0)
+    note: Optional[str] = Field(default=None, max_length=500)
 
 class MatchResultReportOut(BaseModel):
     id: int
@@ -104,6 +100,17 @@ class MatchResultReportOut(BaseModel):
     note: Optional[str] = None
     created_at: datetime
 
+class MatchScoreUpdate(BaseModel):
+    side: Literal["A", "B"]
+    delta: Literal[-1, 1]
+
+
+class MatchScoreOut(BaseModel):
+    match_id: int
+    score_side_a: int
+    score_side_b: int
+    status: str
+
 class LiveMatchBase(BaseModel):
     id: int
     match_post_id: int
@@ -111,13 +118,22 @@ class LiveMatchBase(BaseModel):
     queue_type: Literal["solo", "team"]
     side_a_team_id: Optional[int] = None
     side_b_team_id: Optional[int] = None
-    status: str
+    status: Literal[
+        "awaiting_start",
+        "in_progress",
+        "awaiting_result",
+        "completed",
+        "disputed",
+        "cancelled",
+    ]
     started_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
     winner_side: Optional[Literal["A", "B"]] = None
     winner_team_id: Optional[int] = None
     result_method: Optional[str] = None
     rating_processed: bool
+    score_side_a: int
+    score_side_b: int
     created_at: datetime
     updated_at: datetime
 
