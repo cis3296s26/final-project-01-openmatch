@@ -8,6 +8,7 @@ from core.security import get_current_user
 from core.websocket import manager
 from core.teams import get_users_team_for_sport
 from core.posts import require_post_not_expired, check_fill_and_start_ready, require_before_deadline
+from core.teams import verify_user_has_sport_profile
 
 from schemas.matches import MatchPostCreate, MatchPostUpdate, MatchPostDetailOut, MatchPostParticipantOut, MatchPostJoin
 
@@ -43,23 +44,9 @@ async def create_post(payload: MatchPostCreate, current_user: dict = Depends(get
                 raise HTTPException(status_code=400, detail="Team not found")
             team_name = team["name"]
 
-            existing = conn.execute(
-                text(
-                    """
-                    SELECT id FROM match_posts
-                    WHERE team_id = :team_id AND sport_id = :sport_id
-                      AND expires_at > NOW() AND status NOT IN ('confirmed')
-                    LIMIT 1
-                    """
-                ),
-                {"team_id": payload.team_id, "sport_id": payload.sport_id},
-            ).mappings().first()
-            if existing:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Your team already has an active post for this sport (post #{existing['id']}). "
-                           "Wait for it to expire or delete it before creating a new one.",
-                )
+        # Verify that user has a sport profile for the sport they are trying to create a post on
+        if not verify_user_has_sport_profile(conn, user_id, payload.sport_id):
+            raise HTTPException(status_code=403, detail="You must create sport profile for this team's sport")
 
         row = conn.execute(
             text(
