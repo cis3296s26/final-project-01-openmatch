@@ -43,6 +43,7 @@ async def create_team(payload: TeamCreateForm, current_user: dict = Depends(get_
 
             # Define Team and UserID
             team_id = result["id"]
+            user_id = int(current_user["sub"])
 
             # Initialize team profile
             conn.execute(
@@ -124,8 +125,11 @@ async def join_team(team_id: int, payload: joinTeam, current_user: dict = Depend
             ).mappings().one()
 
             return row
-        except IntegrityError:
-            raise HTTPException(status_code=400, detail="User is already a member of this team or another team of the same sport")
+        except IntegrityError as e:
+            err = str(e.orig) if e.orig else ""
+            if "team_members_user_id_sport_id_key" in err:
+                raise HTTPException(status_code=409, detail="You are already on a team for this sport. Leave your current team first.")
+            raise HTTPException(status_code=409, detail="You are already a member of this team")
         
 @router.post("/teams/{team_id}/leave")
 async def leave_team(team_id: int, current_user: dict = Depends(get_current_user)):
@@ -151,7 +155,7 @@ async def leave_team(team_id: int, current_user: dict = Depends(get_current_user
 
             return {"ok": True}
         except IntegrityError:
-            raise HTTPException(status_code=400, detail="Bad Request")
+            raise HTTPException(status_code=400, detail="Unable to leave team. Please try again.")
 
 
 @router.post("/teams/{team_id}/presence")

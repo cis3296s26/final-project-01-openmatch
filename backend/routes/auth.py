@@ -113,11 +113,11 @@ def verify_email(token: str):
         ).mappings().first()
 
         if not row:
-            raise HTTPException(status_code=400, detail="Invalid token")
+            raise HTTPException(status_code=400, detail="This verification link is invalid. Please request a new one.")
         if row["used_at"] is not None:
-            raise HTTPException(status_code=410, detail="Token already used")
+            raise HTTPException(status_code=410, detail="This verification link has already been used. You can log in now.")
         if row["expires_at"] < datetime.now(timezone.utc):
-            raise HTTPException(status_code=401, detail="Token expired")
+            raise HTTPException(status_code=401, detail="This verification link has expired. Please request a new one.")
 
         conn.execute(
             text(

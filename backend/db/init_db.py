@@ -107,11 +107,12 @@ def init_db() -> None:
                         CHECK (status IN ('awaiting_start', 'in_progress', 'awaiting_result', 'completed', 'disputed', 'cancelled')),
                     started_at TIMESTAMPTZ,
                     ended_at TIMESTAMPTZ,
-                    winner_side TEXT
-                        CHECK (winner_side IN ('A', 'B')),
+                    winner_side TEXT CHECK (winner_side IN ('A', 'B')),
                     winner_team_id INT REFERENCES teams(id) ON DELETE SET NULL,
                     result_method TEXT,
                     rating_processed BOOLEAN NOT NULL DEFAULT FALSE,
+                    score_side_a INT NOT NULL DEFAULT 0,
+                    score_side_b INT NOT NULL DEFAULT 0,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     CHECK (
@@ -184,6 +185,10 @@ def init_db() -> None:
                     ADD COLUMN IF NOT EXISTS locked_by_user_id INT REFERENCES users(id) ON DELETE SET NULL,
                     ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ,
                     ADD COLUMN IF NOT EXISTS ready_deadline_at TIMESTAMPTZ;
+
+                ALTER TABLE live_matches
+                    ADD COLUMN IF NOT EXISTS score_side_a INT NOT NULL DEFAULT 0,
+                    ADD COLUMN IF NOT EXISTS score_side_b INT NOT NULL DEFAULT 0;
 
                 CREATE TABLE IF NOT EXISTS match_post_participants (
                     id SERIAL PRIMARY KEY,

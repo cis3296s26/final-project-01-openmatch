@@ -1,9 +1,9 @@
 "use client"
 
-import { saveAuth, type AuthResponse } from "@/lib/auth";
+import { getToken, saveAuth, type AuthResponse } from "@/lib/auth";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
@@ -20,6 +20,10 @@ type LoginError = {
 
 export default function LoginPage() {
     const router = useRouter();
+
+    useEffect(() => {
+        if (getToken()) router.replace("/dashboard");
+    }, [router]);
 
     const [formData, setFormData] = useState<LoginInput>({
         login: "",
