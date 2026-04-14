@@ -96,6 +96,67 @@ def init_db() -> None:
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
 
+                CREATE TABLE IF NOT EXISTS live_matches (
+                    id SERIAL PRIMARY KEY,
+                    match_post_id INT NOT NULL UNIQUE REFERENCES match_posts(id) ON DELETE CASCADE,
+                    sport_id INT NOT NULL REFERENCES sports(id),
+                    queue_type TEXT NOT NULL CHECK (queue_type IN ('solo', 'team')),
+                    side_a_team_id INT REFERENCES teams(id) ON DELETE SET NULL,
+                    side_b_team_id INT REFERENCES teams(id) ON DELETE SET NULL,
+                    status TEXT NOT NULL DEFAULT 'awaiting_start'
+                        CHECK (status IN ('awaiting_start', 'in_progress', 'awaiting_result', 'completed', 'disputed', 'cancelled')),
+                    started_at TIMESTAMPTZ,
+                    ended_at TIMESTAMPTZ,
+                    winner_side TEXT CHECK (winner_side IN ('A', 'B')),
+                    winner_team_id INT REFERENCES teams(id) ON DELETE SET NULL,
+                    result_method TEXT,
+                    rating_processed BOOLEAN NOT NULL DEFAULT FALSE,
+                    score_side_a INT NOT NULL DEFAULT 0,
+                    score_side_b INT NOT NULL DEFAULT 0,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    CHECK (
+                        (queue_type = 'team' AND side_a_team_id IS NOT NULL AND side_b_team_id IS NOT NULL)
+                        OR
+                        (queue_type = 'solo' AND side_a_team_id IS NULL AND side_b_team_id IS NULL)
+                    )
+                );
+
+                CREATE TABLE IF NOT EXISTS match_players (
+                    id SERIAL PRIMARY KEY,
+                    match_id INT NOT NULL REFERENCES live_matches(id) ON DELETE CASCADE,
+                    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    side TEXT NOT NULL CHECK (side IN ('A', 'B')),
+                    team_id INT REFERENCES teams(id) ON DELETE SET NULL,
+                    joined_from_post_participant_id INT,
+                    mmr_before INT,
+                    mmr_after INT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE(match_id, user_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS match_start_confirmations (
+                    id SERIAL PRIMARY KEY,
+                    match_id INT NOT NULL REFERENCES live_matches(id) ON DELETE CASCADE,
+                    side TEXT NOT NULL CHECK (side IN ('A', 'B')),
+                    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    confirmed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE(match_id, side)
+                );
+
+                CREATE TABLE IF NOT EXISTS match_result_reports (
+                    id SERIAL PRIMARY KEY,
+                    match_id INT NOT NULL REFERENCES live_matches(id) ON DELETE CASCADE,
+                    reporting_side TEXT NOT NULL CHECK (reporting_side IN ('A', 'B')),
+                    reported_by_user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    winner_side TEXT NOT NULL CHECK (winner_side IN ('A', 'B')),
+                    score_side_a INT,
+                    score_side_b INT,
+                    note TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE(match_id, reporting_side)
+                );
+
                 CREATE TABLE IF NOT EXISTS profile_sports (
                     id SERIAL PRIMARY KEY,
                     profile_id INT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -125,11 +186,15 @@ def init_db() -> None:
                     ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ,
                     ADD COLUMN IF NOT EXISTS ready_deadline_at TIMESTAMPTZ;
 
+                ALTER TABLE live_matches
+                    ADD COLUMN IF NOT EXISTS score_side_a INT NOT NULL DEFAULT 0,
+                    ADD COLUMN IF NOT EXISTS score_side_b INT NOT NULL DEFAULT 0;
+
                 CREATE TABLE IF NOT EXISTS match_post_participants (
                     id SERIAL PRIMARY KEY,
                     match_post_id INT NOT NULL REFERENCES match_posts(id) ON DELETE CASCADE,
                     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    side TEXT NOT NULL,
+                    side TEXT NOT NULL CHECK (side IN ('A', 'B')),
                     team_id INT REFERENCES teams(id) ON DELETE SET NULL,
                     selected_for_match BOOLEAN NOT NULL DEFAULT FALSE,
                     ready BOOLEAN NOT NULL DEFAULT FALSE,

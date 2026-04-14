@@ -1,7 +1,6 @@
 from datetime import datetime
-
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Literal
 
 class MatchPostCreate(BaseModel):
     sport_id: int
@@ -10,19 +9,15 @@ class MatchPostCreate(BaseModel):
     skill: str = Field(..., min_length=1, max_length=50)
     location: Optional[str] = Field(default=None, max_length=100)
     note: Optional[str] = Field(default=None, max_length=500)
-    expires_in_minutes: int
+    expires_in_minutes: int = Field(..., gt=0, le=1440)
     players_per_side: int = Field(default=5, ge=1, le=50)
 
 
 class MatchPostUpdate(BaseModel):
-    title: Optional[str] = Field(default=None, max_length=100)
-    skill: Optional[str] = Field(default=None, max_length=50)
+    title: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    skill: Optional[str] = Field(default=None, min_length=1, max_length=50)
     location: Optional[str] = Field(default=None, max_length=100)
     note: Optional[str] = Field(default=None, max_length=500)
-
-class MatchPostLock(BaseModel):
-    team_id: int
-
 
 class MatchPostJoin(BaseModel):
     team_id: Optional[int] = None
@@ -37,7 +32,7 @@ class MatchPostParticipantOut(BaseModel):
     match_post_id: int
     user_id: int
     username: Optional[str] = None
-    side: str
+    side: Literal["A", "B"]
     team_id: Optional[int] = None
     selected_for_match: bool
     ready: bool
@@ -65,3 +60,87 @@ class MatchPostDetailOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     participants: list[MatchPostParticipantOut]
+
+class MatchPlayerOut(BaseModel):
+    id: int
+    match_id: int
+    user_id: int
+    side: Literal["A", "B"]
+    team_id: Optional[int] = None
+    mmr_before: Optional[int] = None
+    mmr_after: Optional[int] = None
+    created_at: datetime
+
+class MatchFinalizeOut(BaseModel):
+    match_id: int
+    winner_side: Literal["A", "B"]
+    status: Literal["completed"]
+
+class MatchStartConfirmationOut(BaseModel):
+    id: int
+    match_id: int
+    side: Literal["A", "B"]
+    user_id: int
+    confirmed_at: datetime
+
+class MatchResultReportCreate(BaseModel):
+    winner_side: Literal["A", "B"]
+    score_side_a: Optional[int] = Field(default=None, ge=0)
+    score_side_b: Optional[int] = Field(default=None, ge=0)
+    note: Optional[str] = Field(default=None, max_length=500)
+
+class MatchResultReportOut(BaseModel):
+    id: int
+    match_id: int
+    reporting_side: Literal["A", "B"]
+    reported_by_user_id: int
+    winner_side: Literal["A", "B"]
+    score_side_a: Optional[int] = None
+    score_side_b: Optional[int] = None
+    note: Optional[str] = None
+    created_at: datetime
+
+class MatchScoreUpdate(BaseModel):
+    side: Literal["A", "B"]
+    delta: Literal[-1, 1]
+
+
+class MatchScoreOut(BaseModel):
+    match_id: int
+    score_side_a: int
+    score_side_b: int
+    status: str
+
+class LiveMatchBase(BaseModel):
+    id: int
+    match_post_id: int
+    sport_id: int
+    queue_type: Literal["solo", "team"]
+    side_a_team_id: Optional[int] = None
+    side_b_team_id: Optional[int] = None
+    status: Literal[
+        "awaiting_start",
+        "in_progress",
+        "awaiting_result",
+        "completed",
+        "disputed",
+        "cancelled",
+    ]
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    winner_side: Optional[Literal["A", "B"]] = None
+    winner_team_id: Optional[int] = None
+    result_method: Optional[str] = None
+    rating_processed: bool
+    score_side_a: int
+    score_side_b: int
+    created_at: datetime
+    updated_at: datetime
+
+class LiveMatchOut(LiveMatchBase):
+    pass
+
+class LiveMatchDetailOut(LiveMatchBase):
+    players: list[MatchPlayerOut]
+    start_confirmations: list[MatchStartConfirmationOut]
+    result_reports: list[MatchResultReportOut]

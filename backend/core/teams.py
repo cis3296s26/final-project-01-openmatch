@@ -30,3 +30,20 @@ def get_users_team_for_sport(conn, user_id: int, sport_id: int) -> Optional[int]
         {"user_id": user_id, "sport_id": sport_id},
     ).mappings().first()
     return int(row["team_id"]) if row else None
+
+def validate_sport_profile_for_joining_team(conn, user_id: int, sport_id: int) -> bool:
+    row = conn.execute(
+        text(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM profiles p
+                JOIN profile_sports ps on ps.profile_id = p.id
+                WHERE p.user_id = :user_id
+                AND ps.sport_id = :sport_id
+            ) AS user_has_sport_profile
+            """
+        ),
+        {"user_id": user_id, "sport_id": sport_id}
+    ).mappings().first()
+    return row.user_has_sport_profile
