@@ -63,6 +63,7 @@ export default function FindAMatchPage() {
   const [user, setUser] = useState<ReturnType<typeof getUser>>(null);
   const [posts, setPosts] = useState<MatchPost[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [userTeams, setUserTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [messageByPost, setMessageByPost] = useState<Record<number, string>>({});
   const [joinTeamByPost, setJoinTeamByPost] = useState<Record<number, number | "">>({});
@@ -71,29 +72,36 @@ export default function FindAMatchPage() {
   function handleLogout() { clearAuth(); router.push("/login"); }
 
   useEffect(() => {
+    const userId = getUser()?.id;
+    if (!userId) return;
+
     (async () => {
       setLoading(true);
       try {
-        const [postsRes, teamsRes] = await Promise.all([
+        const [postsRes, teamsRes, userTeamsRes] = await Promise.all([
           fetch(`${API}/posts`),
           fetch(`${API}/teams`),
+          fetch(`${API}/users/${userId}/teams`, { headers: authHeaders() })
         ]);
         if (postsRes.ok) setPosts(await postsRes.json());
         if (teamsRes.ok) setTeams(await teamsRes.json());
+        if (userTeamsRes.ok) setUserTeams(await userTeamsRes.json());
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
-  async function joinTeamPost(postId: number) {
-    const teamId = joinTeamByPost[postId];
-    if (!teamId) { setMessageByPost((m) => ({ ...m, [postId]: "Pick a team to join with." })); return; }
-    setMessageByPost((m) => ({ ...m, [postId]: "" }));
+  async function joinTeamPost(postId: number, teamId?: number) {
+    const resolvedTeamId = teamId ?? joinTeamByPost[postId];
+    if (!resolvedTeamId) {
+      setMessageByPost((m) => ({ ...m, [postId]: "No team found for this sport. How did you even get this error?" }));
+      return;
+    }
     try {
       const res = await fetch(`${API}/posts/${postId}/join`, {
         method: "POST", headers: authHeaders(),
-        body: JSON.stringify({ team_id: Number(teamId) }),
+        body: JSON.stringify({ team_id: Number(resolvedTeamId) }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -294,20 +302,28 @@ export default function FindAMatchPage() {
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         {isTeam ? (
                           <>
-                            <select
-                              value={joinTeamByPost[p.id] ?? ""}
-                              onChange={(e) => setJoinTeamByPost((s) => ({ ...s, [p.id]: e.target.value ? Number(e.target.value) : "" }))}
-                              className="form-input"
-                              style={{ width: 180, padding: "6px 10px", fontSize: 12 }}
-                            >
-                              <option value="">Join with team...</option>
-                              {teams.filter((t) => t.sport === p.sport_name).map((t) => (
-                                <option key={t.id} value={t.id}>{t.name}</option>
-                              ))}
-                            </select>
-                            <button className="primary-btn" onClick={() => joinTeamPost(p.id)} disabled={status !== "open"}>
-                              Join
-                            </button>
+                            {/* The join team button. Autofinds the user's team for that sport, or reflects that they don't have a team*/}
+                            {/* Should this be its own function? probably */}
+                            {(() => {
+                              const team = userTeams.find((t) => t.sport === p.sport_name);
+                              return (
+                                <button
+                                  className="primary-btn"
+                                  onClick={() => {
+                                    if (!team) {
+                                      setMessageByPost((m) => ({ ...m, [p.id]: "You don't have a team for this sport." }));
+                                      return;
+                                    }
+                                    joinTeamPost(p.id, team.id);
+                                  }}
+                                  disabled={status !== "open" || !team}
+                                  style={!team ? { background: "linear-gradient(135deg, #3f3f46, #52525b)", cursor: "not-allowed" } : {}}
+                                  title={!team ? "You don't have a team for this sport" : undefined}
+                                >
+                                  {team ? `Join as ${team.name}` : "No team for this sport"}
+                                </button>
+                              );
+                            })()}
                           </>
                         ) : (
                           <button className="primary-btn" onClick={() => acceptIndividual(p.id)} disabled={status !== "open"}>
