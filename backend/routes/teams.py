@@ -7,6 +7,7 @@ from core.security import get_current_user
 from core.websocket import manager
 
 from schemas.teams import TeamMember, TeamStats, TeamProfile, Team, TeamCreateForm, joinTeam, editTeam
+from core.teams import validate_sport_profile_for_joining_team
 
 from utils.time import now_iso
 
