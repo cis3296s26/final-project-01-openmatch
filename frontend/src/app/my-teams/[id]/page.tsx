@@ -79,6 +79,9 @@ export default function TeamProfilePage() {
     const [matches, setMatches] = useState<TeamMatch[]>([]);
     const [loading, setLoading] = useState(false);
 
+    const [canEdit, setCanEdit] = useState(false);
+    const [canInvite, setCanInvite] = useState(false);
+
     useEffect(() => {
         const currentUser = getUser();
         setUser(currentUser);
@@ -93,22 +96,26 @@ export default function TeamProfilePage() {
         try {
         const res = await fetch(`${API}/teams/${id}/profile`, { headers: authHeaders() });
         if (res.ok) {
-            const data = await res.json();
-            setTeam({
-                id: data.id,
-                name: data.name,
-                sport: data.sport,
-                city: data.city,
-                description: data.description,
-                rank: data.rank,
-                mmr: data.stats.team_mmr,
-                wins: data.stats.wins,
-                losses: data.stats.losses,
-                ties: data.stats.ties,
-                member_count: data.member_count,
-                created_at: data.created_at,
-            });
-            setMembers(data.members);
+          const data = await res.json();
+
+          setTeam({
+            id: data.id,
+            name: data.name,
+            sport: data.sport,
+            city: data.city,
+            description: data.description,
+            rank: data.rank,
+            mmr: data.stats.team_mmr,
+            wins: data.stats.wins,
+            losses: data.stats.losses,
+            ties: data.stats.ties,
+            member_count: data.member_count,
+            created_at: data.created_at,
+          });
+
+          setMembers(data.members);
+          setCanInvite(Boolean(data.viewer?.can_invite));
+          setCanEdit(Boolean(data.viewer?.can_edit))
         } else if (res.status === 401) {
             router.push("/login");
         }
@@ -336,7 +343,11 @@ const recentResults = matches.slice(0, 10).map((m) => m.result === "win" ? "W" :
             </div>
 
             {/* TODO: show Edit button only if current user is captain */}
-            <button className="ghost-btn" style={{ alignSelf: "flex-start" }}>Edit Team</button>
+            {canEdit && (
+              <button className="ghost-btn" style={{ alignSelf: "flex-start" }}>
+                Edit Team
+              </button>
+            )}
           </div>
 
           {/* Description */}
@@ -460,9 +471,13 @@ const recentResults = matches.slice(0, 10).map((m) => m.result === "win" ? "W" :
                 ))}
 
                 {/* TODO: show Invite button if current user is captain */}
-                <div style={{ padding: "12px 16px", borderTop: "1px solid #131313" }}>
-                  <button className="ghost-btn" style={{ width: "100%" }}>+ Invite Player</button>
-                </div>
+                {canInvite && (
+                  <div style={{ padding: "12px 16px", borderTop: "1px solid #131313" }}>
+                    <button className="ghost-btn" style={{ width: "100%" }}>
+                      + Invite Player
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
