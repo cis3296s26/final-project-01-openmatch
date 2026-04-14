@@ -1,8 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { getToken } from "@/lib/auth";
 
 export default function LandingPage() {
+  const [loggedIn, setLoggedIn] = useState(false);
+  useEffect(() => { setLoggedIn(!!getToken()); }, []);
 
   const stats = [
     { value: "4,200+", label: "Active players" },
@@ -163,7 +167,7 @@ export default function LandingPage() {
               </div>
                 <nav style={{ display: "flex", gap: 2 }}>
                     {[
-                        { label: "How it works", href: "/about" },
+                        { label: "How it works", href: "/how-it-works" },
                         { label: "Sports", href: "/sports" },
                         { label: "Cities", href: "/cities" },
                     ].map((item) => (
@@ -175,12 +179,20 @@ export default function LandingPage() {
                 </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Link href="/login" className="cta-ghost" style={{ padding: "7px 16px", fontSize: 13, borderRadius: 10, textDecoration: "none" }}>
-                    Log in
+              {loggedIn ? (
+                <Link href="/dashboard" className="cta-primary" style={{ padding: "7px 16px", fontSize: 13, borderRadius: 10, animation: "none", boxShadow: "0 0 14px rgba(52,211,153,0.28)", textDecoration: "none" }}>
+                    Dashboard
                 </Link>
-                <Link href="login/register" className="cta-primary" style={{ padding: "7px 16px", fontSize: 13, borderRadius: 10, animation: "none", boxShadow: "0 0 14px rgba(52,211,153,0.28)", textDecoration: "none" }}>
-                    Sign up
-                </Link>
+              ) : (
+                <>
+                  <Link href="/login" className="cta-ghost" style={{ padding: "7px 16px", fontSize: 13, borderRadius: 10, textDecoration: "none" }}>
+                      Log in
+                  </Link>
+                  <Link href="/login/register" className="cta-primary" style={{ padding: "7px 16px", fontSize: 13, borderRadius: 10, animation: "none", boxShadow: "0 0 14px rgba(52,211,153,0.28)", textDecoration: "none" }}>
+                      Sign up
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </header>
@@ -202,10 +214,10 @@ export default function LandingPage() {
           </p>
 
           <div className="a3" style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-            <Link href="/login" className="cta-primary" style={{ textDecoration: "none" }}>
-                Get on the field
+            <Link href={loggedIn ? "/dashboard" : "/login"} className="cta-primary" style={{ textDecoration: "none" }}>
+                {loggedIn ? "Go to Dashboard" : "Get on the field"}
             </Link>
-            <Link href="/about" className="cta-ghost">
+            <Link href="/how-it-works" className="cta-ghost">
                 See how it works
             </Link>
           </div>
@@ -334,9 +346,11 @@ export default function LandingPage() {
         <section style={{ borderTop: "1px solid #141414", padding: "96px 28px", textAlign: "center", position: "relative" }}>
           <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: 500, height: 300, background: "radial-gradient(circle, rgba(16,185,129,0.07), transparent 70%)", borderRadius: "50%", pointerEvents: "none" }} />
           <h2 style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.04em", color: "#fafafa", marginBottom: 16, position: "relative" }}>Ready to play?</h2>
-          <p style={{ fontSize: 14, color: "#8d8d8d", marginBottom: 40, position: "relative" }}>Join thousands of players already on OpenMatch.</p>
-            <Link href="login/register" className="cta-primary" style={{ fontSize: 15, padding: "15px 40px", textDecoration: "none" }}>
-                Create your account
+          <p style={{ fontSize: 14, color: "#8d8d8d", marginBottom: 40, position: "relative" }}>
+            {loggedIn ? "Your dashboard is waiting." : "Join thousands of players already on OpenMatch."}
+          </p>
+            <Link href={loggedIn ? "/dashboard" : "/login/register"} className="cta-primary" style={{ fontSize: 15, padding: "15px 40px", textDecoration: "none" }}>
+                {loggedIn ? "Go to Dashboard" : "Create your account"}
             </Link>
         </section>
 

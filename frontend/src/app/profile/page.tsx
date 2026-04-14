@@ -1,6 +1,7 @@
 "use client";
 
 import { authHeaders, getUser, isAuthenticated, updateUser } from "@/lib/auth";
+import AuthGate from "@/components/AuthGate";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -229,6 +230,7 @@ export default function ProfilePage() {
     );
 
     return (
+        <AuthGate>
         <main className="min-h-screen p-8 max-w-5xl mx-auto space-y-10">
             <header className="space-y-2">
                 <Link href="/dashboard" className="text-3xl font-bold hover:opacity-80 transition-opacity">
@@ -488,5 +490,6 @@ export default function ProfilePage() {
                 </section>
             )}
         </main>
+        </AuthGate>
     );
 }

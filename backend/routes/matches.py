@@ -43,6 +43,24 @@ async def create_post(payload: MatchPostCreate, current_user: dict = Depends(get
                 raise HTTPException(status_code=400, detail="Team not found")
             team_name = team["name"]
 
+            existing = conn.execute(
+                text(
+                    """
+                    SELECT id FROM match_posts
+                    WHERE team_id = :team_id AND sport_id = :sport_id
+                      AND expires_at > NOW() AND status NOT IN ('confirmed')
+                    LIMIT 1
+                    """
+                ),
+                {"team_id": payload.team_id, "sport_id": payload.sport_id},
+            ).mappings().first()
+            if existing:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Your team already has an active post for this sport (post #{existing['id']}). "
+                           "Wait for it to expire or delete it before creating a new one.",
+                )
+
         row = conn.execute(
             text(
                 """
@@ -303,7 +321,7 @@ async def join_post(post_id: int, payload: MatchPostJoin, current_user: dict = D
         poster_team_id = int(post["team_id"])
 
         if team_id == poster_team_id:
-            side = "A"
+            side = "poster"
         else:
             # Lock in opponent team on first opposing join
             current_opponent = post["locked_by_team_id"]
@@ -320,7 +338,7 @@ async def join_post(post_id: int, payload: MatchPostJoin, current_user: dict = D
                 )
             elif int(current_opponent) != team_id:
                 raise HTTPException(status_code=403, detail="Another team has already claimed opponent side")
-            side = "B"
+            side = "opponent"
 
         mem = conn.execute(
             text("SELECT 1 FROM team_members WHERE user_id = :u AND team_id = :t"),
@@ -360,6 +378,63 @@ async def join_post(post_id: int, payload: MatchPostJoin, current_user: dict = D
     if ready_started:
         await manager.broadcast({"type": "ready_window_started", "post_id": post_id})
     return dict(inserted)
+
+
+@router.post("/posts/{post_id}/leave")
+async def leave_post(post_id: int, current_user: dict = Depends(get_current_user)):
+    user_id = int(current_user["sub"])
+
+    with engine.begin() as conn:
+        post = conn.execute(
+            text(
+                """
+                SELECT id, team_id, status, players_per_side, expires_at
+                FROM match_posts
+                WHERE id = :post_id
+                """
+            ),
+            {"post_id": post_id},
+        ).mappings().first()
+
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found")
+
+        if post["status"] == "confirmed":
+            raise HTTPException(status_code=409, detail="Cannot leave a confirmed match")
+
+        participant = conn.execute(
+            text(
+                """
+                SELECT id, side, team_id
+                FROM match_post_participants
+                WHERE match_post_id = :post_id AND user_id = :user_id
+                """
+            ),
+            {"post_id": post_id, "user_id": user_id},
+        ).mappings().first()
+
+        if not participant:
+            raise HTTPException(status_code=400, detail="You are not a participant in this match")
+
+        conn.execute(
+            text("DELETE FROM match_post_participants WHERE match_post_id = :post_id AND user_id = :user_id"),
+            {"post_id": post_id, "user_id": user_id},
+        )
+
+        if post["status"] == "ready_pending":
+            conn.execute(
+                text(
+                    """
+                    UPDATE match_posts
+                    SET status = 'open', ready_deadline_at = NULL, updated_at = NOW()
+                    WHERE id = :post_id
+                    """
+                ),
+                {"post_id": post_id},
+            )
+
+    await manager.broadcast({"type": "participant_left", "post_id": post_id, "user_id": user_id})
+    return {"message": "Successfully left the match"}
 
 
 @router.post("/posts/{post_id}/ready")

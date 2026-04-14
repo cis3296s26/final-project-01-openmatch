@@ -1,5 +1,6 @@
 "use client";
 
+import AuthGate from "@/components/AuthGate";
 import { authHeaders, clearAuth, getUser } from "@/lib/auth";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -114,7 +115,7 @@ export default function MyTeamsPage() {
     }
   }
 
-  async function handleJoinTeam(teamId: number, teamSportId: number) {
+  async function handleJoinTeam(teamId: number) {
     setJoiningTeamId(teamId);
     setActionMessage(null);
     try {
@@ -122,8 +123,7 @@ export default function MyTeamsPage() {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({
-          role: "member",
-          sport_id: teamSportId
+          role: "member"
         }),
       });
 
@@ -137,7 +137,7 @@ export default function MyTeamsPage() {
       } else if (res.status === 401) {
         router.push("/login");
       } else {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         setActionMessage({ id: teamId, text: err.detail || "Failed to join team.", success: false });
       }
     } catch {
@@ -163,12 +163,16 @@ export default function MyTeamsPage() {
           setMyTeams((prev) => prev.filter((t) => t.id !== teamId));
           setAvailableTeams((prev) => [...prev, { ...left, is_member: false }]);
         }
+        setActionMessage({ id: teamId, text: "You've left the team.", success: true });
       } else if (res.status === 401) {
         router.push("/login");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setActionMessage({ id: teamId, text: err.detail || "Failed to leave team.", success: false });
       }
 
     } catch {
-      console.error("Error leaving team");
+      setActionMessage({ id: teamId, text: "Error leaving team. Is the backend running?", success: false });
     } finally {
       setLeavingTeamId(null);
     }
@@ -259,7 +263,7 @@ export default function MyTeamsPage() {
 
   // Main Component
   return (
-    <>
+    <AuthGate>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -598,7 +602,7 @@ export default function MyTeamsPage() {
                             <button
                               className="join-btn"
                               disabled={isJoining}
-                              onClick={() => handleJoinTeam(team.id, team.sport_id)}
+                              onClick={() => handleJoinTeam(team.id)}
                             >
                               {isJoining ? "Joining..." : "Join"}
                             </button>
@@ -702,6 +706,6 @@ export default function MyTeamsPage() {
           </div>
         </div>
       )}
-    </>
+    </AuthGate>
   );
 }

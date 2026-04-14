@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { authHeaders, clearAuth, getUser } from "@/lib/auth";
+import AuthGate from "@/components/AuthGate";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -206,7 +207,7 @@ const recentResults = matches.slice(0, 10).map((m) => m.result === "win" ? "W" :
     }
 
     return (
-        <>
+        <AuthGate>
         <style>{`
             @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
             *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -518,6 +519,6 @@ const recentResults = matches.slice(0, 10).map((m) => m.result === "win" ? "W" :
           </div>
         </main>
       </div>
-    </>
+    </AuthGate>
   );
 }
