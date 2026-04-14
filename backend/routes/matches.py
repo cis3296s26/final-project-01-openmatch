@@ -368,14 +368,24 @@ async def ready_up(post_id: int, current_user: dict = Depends(get_current_user))
 
     with engine.begin() as conn:
         post = conn.execute(
-            text("SELECT id, team_id, status, players_per_side, ready_deadline_at, expires_at FROM match_posts WHERE id = :post_id"),
+            text(
+                """
+                SELECT id, team_id, sport_id, status, players_per_side, ready_deadline_at, expires_at
+                FROM match_posts
+                WHERE id = :post_id
+                """
+            ),
             {"post_id": post_id},
         ).mappings().first()
+
         if not post:
             raise HTTPException(status_code=404, detail="Post not found")
+
         require_post_not_expired(post)
+
         if post["status"] != "ready_pending":
             raise HTTPException(status_code=409, detail="Ready window has not started yet")
+
         require_before_deadline(post)
 
         participant = conn.execute(
@@ -407,7 +417,6 @@ async def ready_up(post_id: int, current_user: dict = Depends(get_current_user))
             {"post_id": post_id, "user_id": user_id},
         ).mappings().one()
 
-        # Check if all selected participants are now ready
         sel = conn.execute(
             text(
                 """
@@ -421,16 +430,130 @@ async def ready_up(post_id: int, current_user: dict = Depends(get_current_user))
         ).mappings().one()
 
         confirmed = False
+
         if int(sel["total"] or 0) > 0 and int(sel["ready_count"]) == int(sel["total"]):
             conn.execute(
-                text("UPDATE match_posts SET status = 'confirmed', updated_at = NOW() WHERE id = :post_id"),
+                text(
+                    """
+                    UPDATE match_posts
+                    SET status = 'confirmed', updated_at = NOW()
+                    WHERE id = :post_id
+                    """
+                ),
                 {"post_id": post_id},
             )
+
+            existing_match = conn.execute(
+                text("SELECT id FROM live_matches WHERE match_post_id = :post_id"),
+                {"post_id": post_id},
+            ).mappings().first()
+
+            if not existing_match:
+                queue_type = "team" if post["team_id"] is not None else "solo"
+
+                side_b_team = None
+                if queue_type == "team":
+                    side_b_team = conn.execute(
+                        text(
+                            """
+                            SELECT team_id
+                            FROM match_post_participants
+                            WHERE match_post_id = :post_id
+                              AND side = 'B'
+                              AND selected_for_match = TRUE
+                              AND team_id IS NOT NULL
+                            LIMIT 1
+                            """
+                        ),
+                        {"post_id": post_id},
+                    ).mappings().first()
+
+                created_match = conn.execute(
+                    text(
+                        """
+                        INSERT INTO live_matches (
+                            match_post_id,
+                            sport_id,
+                            queue_type,
+                            side_a_team_id,
+                            side_b_team_id,
+                            status,
+                            score_side_a,
+                            score_side_b
+                        )
+                        VALUES (
+                            :match_post_id,
+                            :sport_id,
+                            :queue_type,
+                            :side_a_team_id,
+                            :side_b_team_id,
+                            'awaiting_start',
+                            0,
+                            0
+                        )
+                        RETURNING id
+                        """
+                    ),
+                    {
+                        "match_post_id": post_id,
+                        "sport_id": post["sport_id"],
+                        "queue_type": queue_type,
+                        "side_a_team_id": post["team_id"] if queue_type == "team" else None,
+                        "side_b_team_id": side_b_team["team_id"] if side_b_team else None,
+                    },
+                ).mappings().one()
+
+                match_id = created_match["id"]
+
+                selected_players = conn.execute(
+                    text(
+                        """
+                        SELECT id, user_id, side, team_id
+                        FROM match_post_participants
+                        WHERE match_post_id = :post_id
+                          AND selected_for_match = TRUE
+                          AND ready = TRUE
+                        """
+                    ),
+                    {"post_id": post_id},
+                ).mappings().all()
+
+                for sp in selected_players:
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO match_players (
+                                match_id,
+                                user_id,
+                                side,
+                                team_id,
+                                joined_from_post_participant_id
+                            )
+                            VALUES (
+                                :match_id,
+                                :user_id,
+                                :side,
+                                :team_id,
+                                :joined_from_post_participant_id
+                            )
+                            ON CONFLICT (match_id, user_id) DO NOTHING
+                            """
+                        ),
+                        {
+                            "match_id": match_id,
+                            "user_id": sp["user_id"],
+                            "side": sp["side"],
+                            "team_id": sp["team_id"],
+                            "joined_from_post_participant_id": sp["id"],
+                        },
+                    )
+
             confirmed = True
 
     await manager.broadcast({"type": "ready_updated", "post_id": post_id, "user_id": user_id})
     if confirmed:
         await manager.broadcast({"type": "post_confirmed", "post_id": post_id})
+
     return dict(updated)
 
 

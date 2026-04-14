@@ -32,10 +32,8 @@ def check_fill_and_start_ready(conn, post_id: int, post: dict) -> bool:
     ).mappings().all()
     by_side = {r["side"]: int(r["c"]) for r in counts}
 
-    if is_team_post:
-        filled = by_side.get("poster", 0) >= n and by_side.get("opponent", 0) >= n
-    else:
-        filled = by_side.get("A", 0) >= n and by_side.get("B", 0) >= n
+
+    filled = by_side.get("A", 0) >= n and by_side.get("B", 0) >= n
 
     if filled:
         now = utc_now()
