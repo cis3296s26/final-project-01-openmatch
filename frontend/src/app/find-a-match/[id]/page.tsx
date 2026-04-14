@@ -1182,7 +1182,11 @@ export default function MatchLobbyPage() {
                   <div style={{ fontSize: 13, fontWeight: 700, color: "#34d399" }}>
                     You are ready
                   </div>
-                )}
+                  <div style={{ fontSize: 11, color: "#3f3f46", marginTop: 4 }}>
+                    Waiting for other players...
+                  </div>
+                </div>
+              )}
 
                 {myParticipant && !isConfirmed && (
                   <button
@@ -1195,14 +1199,6 @@ export default function MatchLobbyPage() {
                     Leave match
                   </button>
                 )}
-              </aside>
-            </div>
-          )}
-                  <div style={{ fontSize: 11, color: "#3f3f46", marginTop: 4 }}>
-                    Waiting for other players...
-                  </div>
-                </div>
-              )}
 
               {canEnterLiveMatch && liveMatch && (
                 <button
