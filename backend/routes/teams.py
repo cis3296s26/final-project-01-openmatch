@@ -6,9 +6,9 @@ from core.database import engine, r
 from core.security import get_current_user
 from core.websocket import manager
 
-from schemas.teams import TeamMember, TeamStats, TeamProfile, Team, TeamCreateForm, joinTeam
 from core.teams import verify_user_has_sport_profile
 from core.ranking import get_rank_from_mmr
+from schemas.teams import TeamMember, TeamStats, TeamProfile, Team, TeamCreateForm, joinTeam, editTeam
 
 from utils.time import now_iso
 
@@ -96,6 +96,100 @@ def list_teams():
         pres = r.hgetall(f"team:{row['id']}:presence") or {"status": "Offline", "updated_at": None}
         teams.append({**row, "presence": pres})
     return teams
+
+# For updating the team name, under "edit_team"
+@router.patch("/teams/{team_id}")
+async def edit_team_name(team_id: int, payload: editTeam, current_user: dict = Depends(get_current_user)):
+    with engine.begin() as conn:
+        user_id = int(current_user["sub"])
+
+
+        try:
+            # First, verify that this user's ID is the team captains ID
+            user_is_captain = conn.execute(
+                text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM team_members
+                        WHERE team_id = :team_id AND user_id = :user_id
+                        AND role = 'captain'
+                    ) as user_is_captain
+                    """
+                ),
+                { 
+                    "team_id": team_id,
+                    "user_id": user_id
+                }
+            ).mappings().first().user_is_captain
+
+            if not user_is_captain:
+                raise HTTPException(status_code=403, detail="User does not have permissions to edit this team!")
+            
+            # Update team name accordingly
+            conn.execute(
+                text(
+                    """
+                    UPDATE teams
+                    SET name = :name WHERE id= :team_id
+                    """
+                ),
+                {
+                    "team_id": team_id,
+                    "name": payload.name
+                }
+            )
+
+            return {"ok": True}
+
+        except IntegrityError:
+            raise HTTPException(status_code=400, detail="Error encountered. Does another team with this name and sport exist?")
+        
+# DANGER ZONE - DELETING A TEAM
+@router.delete("/teams/{team_id}")
+async def delete_team(team_id: int, current_user: dict = Depends(get_current_user)):
+    with engine.begin() as conn:
+        user_id = int(current_user["sub"])
+
+        try:
+            # First, verify that this user's ID is the team captains ID
+            user_is_captain = conn.execute(
+                text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM team_members
+                        WHERE team_id = :team_id AND user_id = :user_id
+                        AND role = 'captain'
+                    ) as user_is_captain
+                    """
+                ),
+                { 
+                    "team_id": team_id,
+                    "user_id": user_id
+                }
+            ).mappings().first().user_is_captain
+
+            if not user_is_captain:
+                raise HTTPException(status_code=403, detail="User does not have permissions to delete this team!")
+            
+            # Update team name accordingly
+            conn.execute(
+                text(
+                    """
+                    DELETE FROM teams
+                    WHERE id= :team_id
+                    """
+                ),
+                {
+                    "team_id": team_id
+                }
+            )
+
+            return {"ok": True}
+
+        except IntegrityError:
+            raise HTTPException(status_code=400, detail="Error encountered with deleting team.")
 
 @router.post("/teams/{team_id}/join")
 async def join_team(team_id: int, payload: joinTeam, current_user: dict = Depends(get_current_user)):
