@@ -119,11 +119,13 @@ export default function MyTeamsPage() {
     setJoiningTeamId(teamId);
     setActionMessage(null);
     try {
+      const team = availableTeams.find((t) => t.id === teamId);
       const res = await fetch(`${API}/teams/${teamId}/join`, {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({
-          role: "member"
+          role: "member",
+          sport_id: team?.sport_id
         }),
       });
 
@@ -593,7 +595,7 @@ export default function MyTeamsPage() {
 
                           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                             <Link
-                              href={`/teams/${team.id}`}
+                              href={`/my-teams/${team.id}`}
                               className="ghost-btn"
                               style={{ textDecoration: "none" }}
                             >
@@ -709,3 +711,4 @@ export default function MyTeamsPage() {
     </AuthGate>
   );
 }
+

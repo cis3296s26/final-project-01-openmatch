@@ -79,6 +79,15 @@ export default function TeamProfilePage() {
     const [matches, setMatches] = useState<TeamMatch[]>([]);
     const [loading, setLoading] = useState(false);
 
+    const [canEdit, setCanEdit] = useState(false);
+    const [canInvite, setCanInvite] = useState(false);
+    const [editModalOpen, setEditModalOpen] = useState(false);
+    const [editName, setEditName] = useState("");
+    const [editSaving, setEditSaving] = useState(false);
+    const [editError, setEditError] = useState<string | null>(null);
+    const [deleteConfirm, setDeleteConfirm] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
+
     useEffect(() => {
         const currentUser = getUser();
         setUser(currentUser);
@@ -93,22 +102,26 @@ export default function TeamProfilePage() {
         try {
         const res = await fetch(`${API}/teams/${id}/profile`, { headers: authHeaders() });
         if (res.ok) {
-            const data = await res.json();
-            setTeam({
-                id: data.id,
-                name: data.name,
-                sport: data.sport,
-                city: data.city,
-                description: data.description,
-                rank: data.rank,
-                mmr: data.stats.team_mmr,
-                wins: data.stats.wins,
-                losses: data.stats.losses,
-                ties: data.stats.ties,
-                member_count: data.member_count,
-                created_at: data.created_at,
-            });
-            setMembers(data.members);
+          const data = await res.json();
+
+          setTeam({
+            id: data.id,
+            name: data.name,
+            sport: data.sport,
+            city: data.city,
+            description: data.description,
+            rank: data.rank,
+            mmr: data.stats.team_mmr,
+            wins: data.stats.wins,
+            losses: data.stats.losses,
+            ties: data.stats.ties,
+            member_count: data.member_count,
+            created_at: data.created_at,
+          });
+
+          setMembers(data.members);
+          setCanInvite(Boolean(data.viewer?.can_invite));
+          setCanEdit(Boolean(data.viewer?.can_edit))
         } else if (res.status === 401) {
             router.push("/login");
         }
@@ -146,6 +159,68 @@ export default function TeamProfilePage() {
     function handleLogout() {
         clearAuth();
         router.push("../login");
+    }
+
+    function openEditModal() {
+        if (!team) return;
+        setEditName(team.name);
+        setEditError(null);
+        setDeleteConfirm(false);
+        setDeleteError(null);
+        setEditModalOpen(true);
+    }
+
+    function closeEditModal() {
+        setEditModalOpen(false);
+        setDeleteConfirm(false);
+        setEditError(null);
+        setDeleteError(null);
+    }
+
+    async function handleSaveName() {
+        if (!team || !editName.trim()) return;
+        setEditSaving(true);
+        setEditError(null);
+        try {
+            const res = await fetch(`${API}/teams/${team.id}`, {
+                method: "PATCH",
+                headers: authHeaders(),
+                body: JSON.stringify({ name: editName.trim() }),
+            });
+            if (res.ok) {
+                setTeam((prev) => prev ? { ...prev, name: editName.trim() } : prev);
+                closeEditModal();
+            } else {
+                const data = await res.json().catch(() => ({}));
+                setEditError(data.message || "Failed to update team name. Does another team under this name and sport already exist?");
+            }
+        } catch {
+            setEditError("Error making changes.");
+        } finally {
+            setEditSaving(false);
+        }
+    }
+
+    async function handleDeleteTeam() {
+        if (!team) return;
+        setEditSaving(true);
+        setDeleteError(null);
+        try {
+            const res = await fetch(`${API}/teams/${team.id}`, {
+                method: "DELETE",
+                headers: authHeaders(),
+            });
+            if (res.ok) {
+                router.push("/my-teams");
+            } else {
+                const data = await res.json().catch(() => ({}));
+                setDeleteError(data.message || "Failed to delete team.");
+            }
+        } catch {
+            setDeleteError("Network error. Please try again.");
+        } finally {
+            setEditSaving(false);
+        }
     }
 
     const sportColor = team ? (SPORT_COLORS[team.sport] || "#4ade80") : "#4ade80";
@@ -234,6 +309,45 @@ const recentResults = matches.slice(0, 10).map((m) => m.result === "win" ? "W" :
             background: #0c0c0c; border: 1px solid #191919; border-radius: 14px;
             padding: 20px; flex: 1;
             }
+
+            .modal-overlay {
+            position: fixed; inset: 0; z-index: 100;
+            background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+            display: flex; align-items: center; justify-content: center;
+            }
+            .modal-box {
+            background: #0f0f0f; border: 1px solid #1e1e1e; border-radius: 18px;
+            padding: 28px; width: 100%; max-width: 420px;
+            box-shadow: 0 24px 80px rgba(0,0,0,0.7);
+            }
+            .modal-input {
+            width: 100%; background: #111; border: 1px solid #2a2a2a; border-radius: 10px;
+            padding: 10px 14px; font-size: 14px; color: #e4e4e7;
+            font-family: 'DM Sans', sans-serif; outline: none;
+            transition: border-color 0.15s;
+            }
+            .modal-input:focus { border-color: #3f3f46; }
+            .modal-save-btn {
+            background: #fafafa; color: #080808; border: none; border-radius: 10px;
+            padding: 9px 22px; font-size: 13px; font-weight: 700;
+            font-family: 'DM Sans', sans-serif; cursor: pointer; transition: opacity 0.15s;
+            }
+            .modal-save-btn:hover { opacity: 0.88; }
+            .modal-save-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+            .modal-delete-btn {
+            background: rgba(239,68,68,0.08); color: #ef4444;
+            border: 1px solid rgba(239,68,68,0.2); border-radius: 10px;
+            padding: 9px 22px; font-size: 13px; font-weight: 700;
+            font-family: 'DM Sans', sans-serif; cursor: pointer; transition: background 0.15s, border-color 0.15s;
+            }
+            .modal-delete-btn:hover { background: rgba(239,68,68,0.14); border-color: rgba(239,68,68,0.35); }
+            .modal-delete-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+            .modal-cancel-btn {
+            background: transparent; border: 1px solid #1e1e1e; border-radius: 10px;
+            padding: 9px 22px; font-size: 13px; color: #52525b;
+            font-family: 'DM Sans', sans-serif; cursor: pointer; transition: border-color 0.15s, color 0.15s;
+            }
+            .modal-cancel-btn:hover { border-color: #2e2e2e; color: #a1a1aa; }
         `}</style>
 
         <div style={{ minHeight: "100vh", background: "#080808", color: "#e4e4e7", fontFamily: "'DM Sans', sans-serif" }}>
@@ -335,8 +449,10 @@ const recentResults = matches.slice(0, 10).map((m) => m.result === "win" ? "W" :
               </div>
             </div>
 
-            {/* TODO: show Edit button only if current user is captain */}
-            <button className="ghost-btn" style={{ alignSelf: "flex-start" }}>Edit Team</button>
+            {/* Shows button only for captain */}
+            {canEdit && (
+              <button className="ghost-btn" style={{ alignSelf: "flex-start" }} onClick={openEditModal}>Edit Team</button>
+            )}
           </div>
 
           {/* Description */}
@@ -460,9 +576,13 @@ const recentResults = matches.slice(0, 10).map((m) => m.result === "win" ? "W" :
                 ))}
 
                 {/* TODO: show Invite button if current user is captain */}
-                <div style={{ padding: "12px 16px", borderTop: "1px solid #131313" }}>
-                  <button className="ghost-btn" style={{ width: "100%" }}>+ Invite Player</button>
-                </div>
+                {canInvite && (
+                  <div style={{ padding: "12px 16px", borderTop: "1px solid #131313" }}>
+                    <button className="ghost-btn" style={{ width: "100%" }}>
+                      + Invite Player
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -519,6 +639,79 @@ const recentResults = matches.slice(0, 10).map((m) => m.result === "win" ? "W" :
           </div>
         </main>
       </div>
+
+      {/* ── Edit Team Modal ── */}
+      {editModalOpen && (
+          <div className="modal-overlay" onClick={closeEditModal}>
+              <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                  {/* Header */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+                      <h2 style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.03em", color: "#fafafa" }}>Edit Team</h2>
+                      <button onClick={closeEditModal} style={{ background: "transparent", border: "none", color: "#52525b", fontSize: 20, cursor: "pointer", lineHeight: 1, padding: 0 }}>✕</button>
+                  </div>
+
+                  {/* Rename section */}
+                  <div style={{ marginBottom: 24 }}>
+                      <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                          Team Name
+                      </label>
+                      <input
+                          className="modal-input"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && handleSaveName()}
+                          placeholder="Enter team name"
+                          maxLength={60}
+                      />
+                      {editError && (
+                          <p style={{ marginTop: 8, fontSize: 12, color: "#f87171" }}>{editError}</p>
+                      )}
+                  </div>
+
+                  {/* Save / Cancel */}
+                  <div style={{ display: "flex", gap: 10, marginBottom: 28 }}>
+                      <button className="modal-save-btn" onClick={handleSaveName} disabled={editSaving || !editName.trim()}>
+                          {editSaving ? "Saving…" : "Save Changes"}
+                      </button>
+                      <button className="modal-cancel-btn" onClick={closeEditModal} disabled={editSaving}>
+                          Cancel
+                      </button>
+                  </div>
+
+                  {/* Divider */}
+                  <div style={{ height: 1, background: "#1a1a1a", marginBottom: 24 }} />
+
+                  {/* Danger zone */}
+                  <div>
+                      <p style={{ fontSize: 12, fontWeight: 600, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+                          ⚠️Danger Zone⚠️
+                      </p>
+                      {!deleteConfirm ? (
+                          <button className="modal-delete-btn" onClick={() => setDeleteConfirm(true)}>
+                              Delete Team
+                          </button>
+                      ) : (
+                          <div style={{ background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 12, padding: "16px" }}>
+                              <p style={{ fontSize: 13, color: "#fca5a5", marginBottom: 14, lineHeight: 1.5 }}>
+                                  Are you sure? This will permanently delete <strong>{team.name}</strong> and all its data. This cannot be undone.
+                              </p>
+                              {deleteError && (
+                                  <p style={{ marginBottom: 10, fontSize: 12, color: "#f87171" }}>{deleteError}</p>
+                              )}
+                              <div style={{ display: "flex", gap: 10 }}>
+                                  <button className="modal-delete-btn" onClick={handleDeleteTeam} disabled={editSaving}>
+                                      {editSaving ? "Deleting…" : "Yes, Delete Team"}
+                                  </button>
+                                  <button className="modal-cancel-btn" onClick={() => setDeleteConfirm(false)} disabled={editSaving}>
+                                      Cancel
+                                  </button>
+                              </div>
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
     </AuthGate>
   );
 }

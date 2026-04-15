@@ -15,6 +15,11 @@ class TeamStats(BaseModel):
     losses: int
     ties: int
 
+class TeamViewer(BaseModel):
+    is_member: bool
+    can_invite: bool
+    can_edit: bool
+
 class TeamProfile(BaseModel):
     id: int
     name: str
@@ -26,6 +31,7 @@ class TeamProfile(BaseModel):
     members: list[TeamMember]
     created_at: datetime
     member_count: int
+    viewer: TeamViewer
 
 class Team(BaseModel):
     id: int
@@ -41,3 +47,6 @@ class TeamCreateForm(BaseModel):
 class joinTeam(BaseModel):
     role: str
     sport_id: int
+
+class editTeam(BaseModel):
+    name: str
