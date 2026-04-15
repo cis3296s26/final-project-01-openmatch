@@ -7,6 +7,8 @@ from core.security import get_current_user
 from core.websocket import manager
 
 from core.teams import verify_user_has_sport_profile, is_captain
+from core.teams import verify_user_has_sport_profile
+from core.ranking import get_rank_from_mmr
 from schemas.teams import TeamMember, TeamStats, TeamProfile, Team, TeamCreateForm, joinTeam, editTeam
 
 from utils.time import now_iso
@@ -301,19 +303,45 @@ def get_user_teams(user_id: int, current_user: dict = Depends(get_current_user))
         rows = conn.execute(
             text(
                 """
-                SELECT t.id, t.name, t.sport_id, t.city, s.name AS sport
+                SELECT
+                    t.id,
+                    t.name,
+                    t.city,
+                    s.name AS sport,
+                    ts.team_mmr,
+                    COUNT(tm2.user_id) AS member_count
                 FROM team_members tm
-                JOIN teams t ON tm.team_id = t.id
-                JOIN sports s ON t.sport_id = s.id
+                JOIN teams t
+                  ON tm.team_id = t.id
+                JOIN sports s
+                  ON t.sport_id = s.id
+                JOIN team_stats ts
+                  ON ts.team_id = t.id
+                JOIN team_members tm2
+                  ON tm2.team_id = t.id
                 WHERE tm.user_id = :user_id
+                GROUP BY t.id, t.name, t.city, s.name, ts.team_mmr
+                ORDER BY t.name ASC
                 """
             ),
-            {
-                "user_id": user_id
-            }
+            {"user_id": user_id},
         ).mappings().all()
 
-    return [dict(row) for row in rows]
+    result = []
+    for row in rows:
+        mmr = int(row["team_mmr"])
+        rank = get_rank_from_mmr(mmr)
+
+        result.append({
+            "id": row["id"],
+            "name": row["name"],
+            "city": row["city"],
+            "sport": row["sport"],
+            "member_count": int(row["member_count"]),
+            "rank": rank,
+        })
+
+    return result
 
 @router.get("/teams/{team_id}/members")
 def list_team_members(team_id: int) -> list[TeamMember]:
@@ -424,25 +452,8 @@ def get_team_profile(
             {"team_id": team_id, "user_id": auth_user_id},
         ).mappings().first()
 
-    TIERS = [
-        {"name": "Bronze III", "min": 0, "max": 299},
-        {"name": "Bronze II", "min": 300, "max": 599},
-        {"name": "Bronze I", "min": 600, "max": 899},
-        {"name": "Silver III", "min": 900, "max": 1099},
-        {"name": "Silver II", "min": 1100, "max": 1249},
-        {"name": "Silver I", "min": 1250, "max": 1399},
-        {"name": "Gold III", "min": 1400, "max": 1549},
-        {"name": "Gold II", "min": 1550, "max": 1699},
-        {"name": "Gold I", "min": 1700, "max": 1849},
-        {"name": "Platinum III", "min": 1850, "max": 1999},
-        {"name": "Platinum II", "min": 2000, "max": 2149},
-        {"name": "Platinum I", "min": 2150, "max": 2299},
-        {"name": "Diamond", "min": 2300, "max": 2599},
-        {"name": "Champion", "min": 2600, "max": 9999},
-    ]
 
-    mmr = team_row["team_mmr"]
-    rank = next((t["name"] for t in TIERS if t["min"] <= mmr <= t["max"]), "Bronze III")
+    rank = get_rank_from_mmr(team_row["team_mmr"])
 
     members = [
         {

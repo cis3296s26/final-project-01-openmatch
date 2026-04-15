@@ -51,9 +51,9 @@ async def create_post(payload: MatchPostCreate, current_user: dict = Depends(get
         row = conn.execute(
             text(
                 """
-                INSERT INTO match_posts (user_id, team_id, sport_id, title, skill, location, note, expires_at, players_per_side)
-                VALUES (:user_id, :team_id, :sport_id, :title, :skill, :location, :note, :expires_at, :players_per_side)
-                RETURNING id, user_id, team_id, sport_id, title, skill, location, note, expires_at, players_per_side, created_at, updated_at
+                INSERT INTO match_posts (user_id, team_id, sport_id, title, skill, location, note, expires_at, players_per_side, is_competitive)
+                VALUES (:user_id, :team_id, :sport_id, :title, :skill, :location, :note, :expires_at, :players_per_side, :is_competitive)
+                RETURNING id, user_id, team_id, sport_id, title, skill, location, note, expires_at, players_per_side, is_competitive, created_at, updated_at
                 """
             ),
             {
@@ -62,6 +62,7 @@ async def create_post(payload: MatchPostCreate, current_user: dict = Depends(get
                 "sport_id": payload.sport_id,
                 "title": payload.title,
                 "skill": payload.skill,
+                "is_competitive": payload.is_competitive,
                 "location": payload.location,
                 "note": payload.note,
                 "expires_at": expires_at,
@@ -256,9 +257,11 @@ def get_post_detail(post_id: int) -> MatchPostDetailOut:
             text(
                 """
                 SELECT mp.id, mp.match_post_id, mp.user_id, u.username,
-                       mp.side, mp.team_id, mp.selected_for_match, mp.ready, mp.joined_at
+                    mp.side, mp.team_id, t.name AS team_name,
+                    mp.selected_for_match, mp.ready, mp.joined_at
                 FROM match_post_participants mp
                 JOIN users u ON u.id = mp.user_id
+                LEFT JOIN teams t ON t.id = mp.team_id
                 WHERE mp.match_post_id = :post_id
                 ORDER BY mp.joined_at ASC
                 """
@@ -308,7 +311,7 @@ async def join_post(post_id: int, payload: MatchPostJoin, current_user: dict = D
         poster_team_id = int(post["team_id"])
 
         if team_id == poster_team_id:
-            side = "poster"
+            side = "A"
         else:
             # Lock in opponent team on first opposing join
             current_opponent = post["locked_by_team_id"]
@@ -325,7 +328,7 @@ async def join_post(post_id: int, payload: MatchPostJoin, current_user: dict = D
                 )
             elif int(current_opponent) != team_id:
                 raise HTTPException(status_code=403, detail="Another team has already claimed opponent side")
-            side = "opponent"
+            side = "B"
 
         mem = conn.execute(
             text("SELECT 1 FROM team_members WHERE user_id = :u AND team_id = :t"),
@@ -692,3 +695,41 @@ async def accept_individual(post_id: int, current_user: dict = Depends(get_curre
     if ready_started:
         await manager.broadcast({"type": "ready_window_started", "post_id": post_id})
     return dict(inserted)
+
+
+@router.get("/users/{user_id}/match-history")
+def get_user_match_history(user_id: int):
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT
+                    mh.id,
+                    mh.sport_id,
+                    s.name AS sport_name,
+                    mh.queue_type,
+                    mh.title,
+                    mh.skill,
+                    mh.is_competitive,
+                    mh.location,
+                    mh.winner_side,
+                    mh.score_side_a,
+                    mh.score_side_b,
+                    mh.ended_at,
+                    mhp.side,
+                    mhp.team_id,
+                    mhp.mmr_before,
+                    mhp.mmr_after
+                FROM match_history_players mhp
+                JOIN match_history mh
+                  ON mh.id = mhp.match_history_id
+                JOIN sports s
+                  ON s.id = mh.sport_id
+                WHERE mhp.user_id = :user_id
+                ORDER BY mh.ended_at DESC NULLS LAST, mh.id DESC
+                """
+            ),
+            {"user_id": user_id},
+        ).mappings().all()
+
+    return [dict(row) for row in rows]

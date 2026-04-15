@@ -37,6 +37,34 @@ type MatchPost = {
   user_name?: string;
 };
 
+type RecentMatch = {
+  id: number;
+  sport_id: number;
+  sport_name: string;
+  queue_type: "solo" | "team";
+  title: string | null;
+  skill: string | null;
+  location: string | null;
+  is_competitive: boolean;
+  winner_side: "A" | "B" | null;
+  score_side_a: number;
+  score_side_b: number;
+  ended_at: string | null;
+  side: "A" | "B";
+  mmr_before: number | null;
+  mmr_after: number | null;
+  team_id: number | null;
+};
+
+type MyTeam = {
+  id: number;
+  name: string;
+  city: string;
+  sport: string;
+  member_count: number;
+  rank: string;
+};
+
 const SPORT_COLORS: Record<string, string> = {
   "Soccer": "#4ade80",
   "Basketball": "#fb923c",
@@ -105,12 +133,17 @@ export default function OpenMatchDashboard() {
   const [user, setUser] = useState<ReturnType<typeof getUser>>(null);
 
   const [posts, setPosts] = useState<MatchPost[]>([]);
+  const [recentMatches, setRecentMatches] = useState<RecentMatch[]>([]);
+  const [recentMatchesLoading, setRecentMatchesLoading] = useState(true);
   const [sports, setSports] = useState<Sport[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [postsLoading, setPostsLoading] = useState(true);
   const [showPostModal, setShowPostModal] = useState(false);
   const [editingPost, setEditingPost] = useState<MatchPost | null>(null);
   const [postMessage, setPostMessage] = useState("");
+  const [formIsCompetitive, setFormIsCompetitive] = useState(false);
+  const [myTeams, setMyTeams] = useState<MyTeam[]>([]);
+  const [myTeamsLoading, setMyTeamsLoading] = useState(true);
 
   const [formSportId, setFormSportId] = useState<number | null>(null);
   const [formTeamId, setFormTeamId] = useState<number | null>(null);
@@ -123,14 +156,7 @@ export default function OpenMatchDashboard() {
   const [formPlayersPerSide, setFormPlayersPerSide] = useState(5);
   const [formSubmitting, setFormSubmitting] = useState(false);
 
-  const [teamStatuses, setTeamStatuses] = useState<Record<string, boolean>>({
-    "Broad St Ballers": true,
-    "The Rim Breakers": false,
-  });
 
-  const toggleReady = (teamName: string) => {
-    setTeamStatuses((prev) => ({ ...prev, [teamName]: !prev[teamName] }));
-  };
 
   function handleLogout() {
     clearAuth();
@@ -144,8 +170,46 @@ export default function OpenMatchDashboard() {
     fetchTeams();
     if (currentUser) {
       fetchUserPosts(currentUser.id);
+      fetchRecentMatches(currentUser.id);
+      fetchMyTeams(currentUser.id);
     }
   }, []);
+
+  async function fetchMyTeams(userId: number) {
+    setMyTeamsLoading(true);
+    try {
+      const res = await fetch(`${API}/users/${userId}/teams`, {
+        headers: authHeaders(),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setMyTeams(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch my teams:", err);
+    } finally {
+      setMyTeamsLoading(false);
+    }
+  }
+
+  async function fetchRecentMatches(userId: number) {
+    setRecentMatchesLoading(true);
+    try {
+      const res = await fetch(`${API}/users/${userId}/match-history`, {
+        headers: authHeaders(),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setRecentMatches(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch recent matches:", err);
+    } finally {
+      setRecentMatchesLoading(false);
+    }
+  }
 
   async function fetchSports() {
     try {
@@ -208,6 +272,7 @@ export default function OpenMatchDashboard() {
     setFormSportId(post.sport_id);
     setFormTitle(post.title);
     setFormSkill(post.skill);
+    setFormIsCompetitive(post.skill === "Competitive");
     setFormLocation(post.location || "");
     setFormNote(post.note || "");
     setPostMessage("");
@@ -243,6 +308,7 @@ export default function OpenMatchDashboard() {
           team_id: formTeamId || null,
           title: formTitle,
           skill: formSkill,
+          is_competitive: formIsCompetitive,
           location: formLocation || null,
           note: formNote || null,
           expires_in_minutes: formExpiration,
@@ -284,6 +350,7 @@ export default function OpenMatchDashboard() {
         body: JSON.stringify({
           title: formTitle,
           skill: formSkill,
+          is_competitive: formIsCompetitive,
           location: formLocation || null,
           note: formNote || null,
         }),
@@ -332,58 +399,12 @@ export default function OpenMatchDashboard() {
     { initials: "AL", name: "Ash L.", desc: "Street tennis doubles — LOVE Park", tags: ["Tennis", "Intermediate"], time: "31m", isTeam: false },
   ];
 
-  const recentMatches = [
-    { team: "Eastside FC", meta: "Mar 27 · FDR Park", score: "3 – 1", win: true },
-    { team: "North Philly Rovers", meta: "Mar 24 · Clark Park", score: "0 – 2", win: false },
-    { team: "The Rim Breakers", meta: "Mar 21 · Palumbo Rec", score: "21 – 17", win: true },
-    { team: "South Street Squad", meta: "Mar 18 · Cobb's Creek", score: "2 – 1", win: true },
-    { team: "Fishtown Hoops", meta: "Mar 15 · Penn Treaty Park", score: "14 – 21", win: false },
-  ];
-
-  const myTeams = [
-    { name: "Broad St Ballers", sport: "Soccer", meta: "Philadelphia · 9 members", rank: "Gold II" },
-    { name: "The Rim Breakers", sport: "Basketball", meta: "Philadelphia · 5 members", rank: "Silver I" },
-  ];
 
   return (
     <AuthGate>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        .ready-btn {
-          position: relative; overflow: hidden; width: 100%; border: none;
-          cursor: pointer; font-family: 'DM Sans', sans-serif; font-weight: 700;
-          font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
-          padding: 10px 16px; border-radius: 11px;
-          transition: transform 0.1s ease, box-shadow 0.25s ease;
-        }
-        .ready-btn:active { transform: scale(0.96); }
-        .ready-btn.is-ready {
-          background: linear-gradient(135deg, #047857 0%, #10b981 50%, #34d399 100%);
-          color: #fff;
-          box-shadow: 0 0 0 1px rgba(52,211,153,0.3), 0 0 22px rgba(52,211,153,0.45), 0 0 55px rgba(16,185,129,0.15);
-          animation: ready-pulse 2.2s ease-in-out infinite;
-        }
-        .ready-btn.is-ready:hover {
-          box-shadow: 0 0 0 1px rgba(52,211,153,0.5), 0 0 32px rgba(52,211,153,0.65), 0 0 65px rgba(16,185,129,0.28);
-        }
-        .ready-btn.not-ready {
-          background: #111; border: 1px solid #222; color: #3f3f46; box-shadow: none;
-        }
-        .ready-btn.not-ready:hover {
-          border-color: #2e2e2e; color: #71717a; box-shadow: 0 0 15px rgba(52,211,153,0.06);
-        }
-        @keyframes ready-pulse {
-          0%, 100% { box-shadow: 0 0 0 1px rgba(52,211,153,0.3), 0 0 22px rgba(52,211,153,0.45), 0 0 55px rgba(16,185,129,0.15); }
-          50%       { box-shadow: 0 0 0 1px rgba(52,211,153,0.5), 0 0 36px rgba(52,211,153,0.68), 0 0 72px rgba(16,185,129,0.3); }
-        }
-        .ripple {
-          position: absolute; border-radius: 50%; background: rgba(255,255,255,0.2);
-          transform: scale(0); animation: ripple-out 0.55s linear forwards; pointer-events: none;
-        }
-        @keyframes ripple-out { to { transform: scale(4.5); opacity: 0; } }
-
         .card { background: #0c0c0c; border: 1px solid #191919; border-radius: 18px; box-shadow: 0 8px 40px rgba(0,0,0,0.55); }
         .match-row { transition: background 0.12s; cursor: default; }
         .match-row:hover { background: rgba(255,255,255,0.015); }
@@ -603,36 +624,186 @@ export default function OpenMatchDashboard() {
                 <h2 style={{ fontSize: 15, fontWeight: 500, color: "#d4d4d8" }}>Recent matches</h2>
                 <button className="ghost-btn">View all</button>
               </div>
+
               <div className="card" style={{ overflow: "hidden" }}>
-                {recentMatches.map((match, i) => (
-                  <div key={match.team} className="match-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px", borderBottom: i !== recentMatches.length - 1 ? "1px solid #131313" : "none" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                      <div style={{ width: 34, height: 34, borderRadius: 9, background: match.win ? "rgba(74,222,128,0.06)" : "rgba(248,113,113,0.06)", border: `1px solid ${match.win ? "rgba(74,222,128,0.14)" : "rgba(248,113,113,0.14)"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: match.win ? "#4ade80" : "#f87171" }}>
-                        {match.win ? "W" : "L"}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: "#e4e4e7" }}>{match.team}</div>
-                        <div style={{ fontSize: 11, color: "#3f3f46", marginTop: 2 }}>{match.meta}</div>
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                      <div style={{ fontSize: 14, fontWeight: 500, color: "#52525b" }}>{match.score}</div>
-                      <span style={{ padding: "3px 9px", borderRadius: 7, fontSize: 10, fontWeight: 800, letterSpacing: "0.07em", background: match.win ? "rgba(74,222,128,0.07)" : "rgba(248,113,113,0.07)", border: `1px solid ${match.win ? "rgba(74,222,128,0.16)" : "rgba(248,113,113,0.16)"}`, color: match.win ? "#86efac" : "#fca5a5" }}>
-                        {match.win ? "WIN" : "LOSS"}
-                      </span>
-                    </div>
+                {recentMatchesLoading ? (
+                  <div style={{ padding: 24, textAlign: "center", color: "#52525b" }}>
+                    Loading recent matches...
                   </div>
-                ))}
+                ) : recentMatches.length === 0 ? (
+                  <div style={{ padding: 24, textAlign: "center", color: "#52525b" }}>
+                    No completed matches yet
+                  </div>
+                ) : (
+                  recentMatches.map((match, i) => {
+                    const win = match.winner_side === match.side;
+                    const score = `${match.score_side_a} – ${match.score_side_b}`;
+                    const postTypeLabel = match.queue_type === "team" ? "Team" : "Individual";
+                    const sportColor = SPORT_COLORS[match.sport_name] || "#4ade80";
+
+                    const mmrDelta =
+                      match.mmr_before !== null && match.mmr_after !== null
+                        ? match.mmr_after - match.mmr_before
+                        : null;
+
+                    let mmrText =
+                      mmrDelta === null
+                        ? null
+                        : `${mmrDelta > 0 ? "+" : ""}${mmrDelta}`;
+
+                    if (!match.is_competitive) {
+                      mmrText = null;
+                    }
+                    const metaParts = [];
+                    if (match.ended_at) {
+                      metaParts.push(
+                        new Date(match.ended_at).toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                        })
+                      );
+                    }
+                    if (match.location) {
+                      metaParts.push(match.location);
+                    }
+
+                    return (
+                      <div
+                        key={match.id}
+                        className="match-row"
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "13px 20px",
+                          borderBottom: i !== recentMatches.length - 1 ? "1px solid #131313" : "none",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                          <div
+                            style={{
+                              width: 34,
+                              height: 34,
+                              borderRadius: 9,
+                              background: win ? "rgba(74,222,128,0.06)" : "rgba(248,113,113,0.06)",
+                              border: `1px solid ${win ? "rgba(74,222,128,0.14)" : "rgba(248,113,113,0.14)"}`,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 10,
+                              fontWeight: 800,
+                              color: win ? "#4ade80" : "#f87171",
+                            }}
+                          >
+                            {win ? "W" : "L"}
+                          </div>
+                          <div>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                marginBottom: 4,
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 800,
+                                  letterSpacing: "0.08em",
+                                  color: sportColor,
+                                }}
+                              >
+                                {match.sport_name.toUpperCase()}
+                              </span>
+
+                              <span style={{ color: "#222" }}>·</span>
+
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                  padding: "2px 8px",
+                                  borderRadius: 5,
+                                  background:
+                                    match.queue_type === "team"
+                                      ? "rgba(96,165,250,0.1)"
+                                      : "rgba(168,85,247,0.1)",
+                                  border: `1px solid ${
+                                    match.queue_type === "team"
+                                      ? "rgba(96,165,250,0.2)"
+                                      : "rgba(168,85,247,0.2)"
+                                  }`,
+                                  color: match.queue_type === "team" ? "#93c5fd" : "#c4b5fd",
+                                }}
+                              >
+                                {postTypeLabel}
+                              </span>
+
+                              {match.skill && (
+                                <>
+                                  <span style={{ color: "#222" }}>·</span>
+                                  <span style={{ fontSize: 11, color: "#3f3f46" }}>{match.skill}</span>
+                                </>
+                              )}
+                            </div>
+
+                            <div style={{ fontSize: 14, fontWeight: 600, color: "#e4e4e7" }}>
+                              {match.title || "Match"}
+                            </div>
+
+                            <div style={{ fontSize: 11, color: "#3f3f46", marginTop: 2 }}>
+                              {metaParts.join(" · ")}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                          <div style={{ fontSize: 14, fontWeight: 500, color: "#52525b" }}>
+                            {score}
+                          </div>
+
+                          {mmrText && (
+                            <span
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 800,
+                                color: mmrDelta !== null && mmrDelta > 0 ? "#4ade80" : "#f87171",
+                              }}
+                            >
+                              {mmrText} MMR
+                            </span>
+                          )}
+
+                          <span
+                            style={{
+                              padding: "3px 9px",
+                              borderRadius: 7,
+                              fontSize: 10,
+                              fontWeight: 800,
+                              letterSpacing: "0.07em",
+                              background: win ? "rgba(74,222,128,0.07)" : "rgba(248,113,113,0.07)",
+                              border: `1px solid ${win ? "rgba(74,222,128,0.16)" : "rgba(248,113,113,0.16)"}`,
+                              color: win ? "#86efac" : "#fca5a5",
+                            }}
+                          >
+                            {win ? "WIN" : "LOSS"}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
-
             {/* ── RIGHT: record → nearby requests → my teams ── */}
             <aside style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
               {/* Record — sits at top of sidebar, aligned with greeting */}
               <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 46, fontWeight: 800, letterSpacing: "-0.05em", color: "#fafafa", lineHeight: 1 }}>3W – 2L</div>
-                <div style={{ fontSize: 11, color: "#3f3f46", marginTop: 7, letterSpacing: "0.06em", textTransform: "uppercase" }}>recent record</div>
+                <div style={{ fontSize: 46, fontWeight: 800, letterSpacing: "-0.05em", color: "#fafafa", lineHeight: 1 }}></div>
+                <div style={{ fontSize: 11, color: "#3f3f46", marginTop: 7, letterSpacing: "0.06em", textTransform: "uppercase" }}></div>
               </div>
 
               {/* Nearby requests */}
@@ -688,62 +859,101 @@ export default function OpenMatchDashboard() {
               <div>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                   <h2 style={{ fontSize: 15, fontWeight: 500, color: "#d4d4d8" }}>My teams</h2>
-                  <span style={{ fontSize: 11, color: "#3f3f46" }}>2 teams</span>
+                  <span style={{ fontSize: 11, color: "#3f3f46" }}>
+                    {myTeamsLoading ? "..." : `${myTeams.length} team${myTeams.length === 1 ? "" : "s"}`}
+                  </span>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {myTeams.map((team) => {
-                    const isReady = teamStatuses[team.name] ?? false;
-                    return (
-                      <div key={team.name} style={{
-                        background: "#0c0c0c",
-                        border: `1px solid ${isReady ? "rgba(52,211,153,0.14)" : "#191919"}`,
-                        borderRadius: 16,
-                        padding: "14px 16px",
-                        boxShadow: isReady ? "0 8px 40px rgba(0,0,0,0.5), 0 0 50px rgba(52,211,153,0.05)" : "0 8px 40px rgba(0,0,0,0.5)",
-                        transition: "border-color 0.3s, box-shadow 0.3s",
-                      }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                            <div style={{ width: 32, height: 32, borderRadius: 9, background: "#111", border: "1px solid #1e1e1e", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 800, color: "#52525b", flexShrink: 0 }}>
-                              {team.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}
-                            </div>
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: "#e4e4e7", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{team.name}</div>
-                              <div style={{ fontSize: 10, color: "#3f3f46", marginTop: 1 }}>{team.sport} · {team.meta}</div>
-                            </div>
-                          </div>
-                          <span style={{ padding: "3px 9px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "rgba(96,165,250,0.07)", border: "1px solid rgba(96,165,250,0.16)", color: "#93c5fd", flexShrink: 0 }}>
-                            {team.rank}
-                          </span>
-                        </div>
-                        <button
-                          className={`ready-btn ${isReady ? "is-ready" : "not-ready"}`}
-                          onClick={(e) => {
-                            const btn = e.currentTarget;
-                            const rect = btn.getBoundingClientRect();
-                            const size = Math.max(rect.width, rect.height);
-                            const x = e.clientX - rect.left - size / 2;
-                            const y = e.clientY - rect.top - size / 2;
-                            const el = document.createElement("span");
-                            el.className = "ripple";
-                            el.style.cssText = `width:${size}px;height:${size}px;left:${x}px;top:${y}px`;
-                            btn.appendChild(el);
-                            setTimeout(() => el.remove(), 560);
-                            toggleReady(team.name);
+
+                {myTeamsLoading ? (
+                  <div className="card" style={{ padding: 24, textAlign: "center", color: "#52525b" }}>
+                    Loading teams...
+                  </div>
+                ) : myTeams.length === 0 ? (
+                  <div className="card" style={{ padding: 24, textAlign: "center", color: "#52525b" }}>
+                    You are not on any teams yet
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {myTeams.map((team) => (
+                      <Link
+                        key={team.id}
+                        href={`/my-teams/${team.id}`}
+                        style={{ textDecoration: "none", color: "inherit" }}
+                      >
+                        <div
+                          style={{
+                            background: "#0c0c0c",
+                            border: "1px solid #191919",
+                            borderRadius: 16,
+                            padding: "14px 16px",
+                            boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
                           }}
                         >
-                          {isReady ? "Ready" : "Ready Up"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                              <div
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 9,
+                                  background: "#111",
+                                  border: "1px solid #1e1e1e",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: 9,
+                                  fontWeight: 800,
+                                  color: "#52525b",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {team.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}
+                              </div>
 
-            </aside>
-          </div>
-        </main>
-      </div>
+                              <div style={{ minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    fontSize: 13,
+                                    fontWeight: 600,
+                                    color: "#e4e4e7",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {team.name}
+                                </div>
+                                <div style={{ fontSize: 10, color: "#3f3f46", marginTop: 1 }}>
+                                  {team.sport} · {team.city} · {team.member_count} member{team.member_count === 1 ? "" : "s"}
+                                </div>
+                              </div>
+                            </div>
+
+                            <span
+                              style={{
+                                padding: "3px 9px",
+                                borderRadius: 6,
+                                fontSize: 10,
+                                fontWeight: 700,
+                                background: "rgba(96,165,250,0.07)",
+                                border: "1px solid rgba(96,165,250,0.16)",
+                                color: "#93c5fd",
+                                flexShrink: 0,
+                              }}
+                            >
+                              {team.rank}
+                            </span>
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+              </aside>
+            </div>
+          </main>
+        </div>
 
       {/* ── Post Modal ── */}
       {showPostModal && (
@@ -878,15 +1088,19 @@ export default function OpenMatchDashboard() {
 
               <div>
                 <label className="form-label">Skill Level *</label>
-                <select
-                  className="form-input"
-                  value={formSkill}
-                  onChange={(e) => setFormSkill(e.target.value)}
-                >
-                  {SKILL_LEVELS.map((level) => (
-                    <option key={level} value={level}>{level}</option>
-                  ))}
-                </select>
+                  <select
+                    className="form-input"
+                    value={formSkill}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFormSkill(value);
+                      setFormIsCompetitive(value === "Competitive");
+                    }}
+                  >
+                    {SKILL_LEVELS.map((level) => (
+                      <option key={level} value={level}>{level}</option>
+                    ))}
+                  </select>
               </div>
 
               <div>

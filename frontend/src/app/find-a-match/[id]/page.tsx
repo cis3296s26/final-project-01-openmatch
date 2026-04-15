@@ -30,6 +30,7 @@ type Participant = {
   username: string | null;
   side: string;
   team_id: number | null;
+  team_name: string | null;
   selected_for_match: boolean;
   ready: boolean;
   joined_at: string;
@@ -154,13 +155,24 @@ export default function MatchLobbyPage() {
       await refresh();
     } catch { setMsg("Backend not reachable."); }
   }
-
   const isTeam = post?.team_id !== null;
   const pps = post?.players_per_side ?? 5;
-  const sideALabel = isTeam ? "Poster" : "Side A";
-  const sideBLabel = isTeam ? "Opponent" : "Side B";
-  const sideAKey = isTeam ? "poster" : "A";
-  const sideBKey = isTeam ? "opponent" : "B";
+
+  const sideAKey = "A";
+  const sideBKey = "B";
+
+  const sideAParticipants = post?.participants.filter((p) => p.side === sideAKey) ?? [];
+  const sideBParticipants = post?.participants.filter((p) => p.side === sideBKey) ?? [];
+
+  const sideATeamName =
+    sideAParticipants.find((p) => p.team_name)?.team_name || "Side A";
+
+  const sideBTeamName =
+    sideBParticipants.find((p) => p.team_name)?.team_name || "Side B";
+
+  const sideALabel = isTeam ? sideATeamName : "Side A";
+  const sideBLabel = isTeam ? sideBTeamName : "Side B";
+
   const sideACount = sideCounts[sideAKey] ?? 0;
   const sideBCount = sideCounts[sideBKey] ?? 0;
 
@@ -168,9 +180,6 @@ export default function MatchLobbyPage() {
   const isReadyPending = post?.status === "ready_pending";
   const isConfirmed = post?.status === "confirmed";
   const sportColor = post ? (SPORT_COLORS[post.sport_name] || "#4ade80") : "#4ade80";
-
-  const sideAParticipants = post?.participants.filter((p) => p.side === sideAKey) ?? [];
-  const sideBParticipants = post?.participants.filter((p) => p.side === sideBKey) ?? [];
 
   return (
     <AuthGate>
@@ -369,7 +378,11 @@ export default function MatchLobbyPage() {
                               </div>
                               <div>
                                 <div style={{ fontSize: 13, fontWeight: 600, color: "#e4e4e7" }}>{p.username ?? `User ${p.user_id}`}</div>
-                                {p.team_id && <div style={{ fontSize: 10, color: "#3f3f46", marginTop: 1 }}>Team {p.team_id}</div>}
+                                {p.team_name && (
+                                  <div style={{ fontSize: 10, color: "#3f3f46", marginTop: 1 }}>
+                                    {p.team_name}
+                                  </div>
+                                )}
                               </div>
                             </div>
                             {p.selected_for_match && (
@@ -418,7 +431,11 @@ export default function MatchLobbyPage() {
                               </div>
                               <div>
                                 <div style={{ fontSize: 13, fontWeight: 600, color: "#e4e4e7" }}>{p.username ?? `User ${p.user_id}`}</div>
-                                {p.team_id && <div style={{ fontSize: 10, color: "#3f3f46", marginTop: 1 }}>Team {p.team_id}</div>}
+                                {p.team_name && (
+                                  <div style={{ fontSize: 10, color: "#3f3f46", marginTop: 1 }}>
+                                    {p.team_name}
+                                  </div>
+                                )}
                               </div>
                             </div>
                             {p.selected_for_match && (

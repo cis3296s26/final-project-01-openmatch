@@ -3,6 +3,9 @@ from sqlalchemy import text
 
 from core.database import engine
 from core.security import get_current_user
+from core.mmr import apply_individual_competitive_mmr, apply_team_competitive_mmr
+from core.match_history import archive_completed_match
+
 from schemas.matches import (
     MatchFinalizeOut,
     MatchResultReportCreate,
@@ -61,6 +64,17 @@ def _build_match_detail(conn, match):
 
 
 def _apply_match_completion(conn, match, winner_side: str):
+    post = conn.execute(
+        text(
+            """
+            SELECT id, is_competitive
+            FROM match_posts
+            WHERE id = :post_id
+            """
+        ),
+        {"post_id": match["match_post_id"]},
+    ).mappings().first()
+
     players = conn.execute(
         text(
             """
@@ -96,6 +110,8 @@ def _apply_match_completion(conn, match, winner_side: str):
             },
         )
 
+    winner_team_id = None
+
     if match["queue_type"] == "team":
         winner_team_id = match["side_a_team_id"] if winner_side == "A" else match["side_b_team_id"]
         loser_team_id = match["side_b_team_id"] if winner_side == "A" else match["side_a_team_id"]
@@ -125,8 +141,12 @@ def _apply_match_completion(conn, match, winner_side: str):
             ),
             {"tid": loser_team_id},
         )
-    else:
-        winner_team_id = None
+
+    if post and post["is_competitive"]:
+        if match["queue_type"] == "team":
+            apply_team_competitive_mmr(conn, match, winner_side)
+        else:
+            apply_individual_competitive_mmr(conn, match, winner_side)
 
     conn.execute(
         text(
@@ -149,16 +169,33 @@ def _apply_match_completion(conn, match, winner_side: str):
             "winner_team_id": winner_team_id,
         },
     )
+
     conn.execute(
         text(
             """
-            UPDATE match_posts
-            SET status = 'completed',
-                expires_at = NOW() + INTERVAL '30 days',
+            UPDATE live_matches
+            SET
+                winner_side = :winner_side,
+                winner_team_id = :winner_team_id,
+                status = 'completed',
+                ended_at = NOW(),
+                result_method = 'scoreboard',
+                rating_processed = TRUE,
                 updated_at = NOW()
-            WHERE id = :post_id
+            WHERE id = :id
             """
         ),
+        {
+            "id": match["id"],
+            "winner_side": winner_side,
+            "winner_team_id": winner_team_id,
+        },
+    )
+
+    archive_completed_match(conn, match["id"])
+
+    conn.execute(
+        text("DELETE FROM match_posts WHERE id = :post_id"),
         {"post_id": match["match_post_id"]},
     )
 
