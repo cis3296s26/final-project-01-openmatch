@@ -464,6 +464,7 @@ export default function MyTeamsPage() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {myTeams.map((team) => {
                       const sportColor = getSportColor(team.sport_id) || "#71717a";
+                      const wasActioned = actionMessage?.id === team.id;
                       return (
                         <div key={team.id} className="team-card">
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
@@ -491,6 +492,11 @@ export default function MyTeamsPage() {
                             )}
                           </div>
 
+                          {wasActioned && actionMessage && (
+                            <p style={{ fontSize: 11, color: actionMessage.success ? "#34d399" : "#ef4444", marginBottom: 10 }}>
+                              {actionMessage.text}
+                            </p>
+                          )}
                           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                             <Link
                               href={`/my-teams/${team.id}`}
