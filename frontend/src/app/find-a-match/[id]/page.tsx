@@ -4,7 +4,7 @@ import AuthGate from "@/components/AuthGate";
 import { authHeaders, clearAuth, getUser } from "@/lib/auth";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
@@ -59,6 +59,11 @@ type PostDetail = {
   participants: Participant[];
 };
 
+type LiveMatchLookup = {
+  id: number;
+  status: string;
+};
+
 function initials(name: string): string {
   return name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
 }
@@ -71,6 +76,7 @@ export default function MatchLobbyPage() {
   const [user, setUser] = useState<ReturnType<typeof getUser>>(null);
 
   const [post, setPost] = useState<PostDetail | null>(null);
+  const [liveMatch, setLiveMatch] = useState<LiveMatchLookup | null>(null);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
   const [now, setNow] = useState(Date.now());
@@ -113,20 +119,47 @@ export default function MatchLobbyPage() {
     return { total: selected.length, ready: selected.filter((p) => p.ready).length };
   }, [post]);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/posts/${postId}`);
-      if (!res.ok) { setMsg("Post not found."); setPost(null); return; }
-      setPost(await res.json());
-    } finally { setLoading(false); }
-  }
+      const [postRes, liveMatchRes] = await Promise.all([
+        fetch(`${API}/posts/${postId}`),
+        fetch(`${API}/posts/${postId}/live-match`, { headers: authHeaders() }),
+      ]);
+      if (!postRes.ok) { setMsg("Post not found."); setPost(null); setLiveMatch(null); return; }
+      setPost(await postRes.json());
+      if (liveMatchRes.ok) {
+        const d = await liveMatchRes.json();
+        setLiveMatch({ id: d.id, status: d.status });
+      } else {
+        setLiveMatch(null);
+      }
+    } catch { setMsg("Backend not reachable."); }
+    finally { setLoading(false); }
+  }, [postId]);
 
   useEffect(() => {
     setLoading(true);
     refresh();
     const t = setInterval(refresh, 3500);
     return () => clearInterval(t);
-  }, [postId]);
+  }, [refresh]);
+
+  const canEnterLiveMatch =
+    !!liveMatch &&
+    !!myParticipant &&
+    myParticipant.selected_for_match &&
+    myParticipant.ready;
+
+  useEffect(() => {
+    if (!canEnterLiveMatch || !liveMatch) return;
+    const key = `live-match-autoredirect-${liveMatch.id}`;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, "1");
+    const t = setTimeout(() => {
+      router.push(`/find-a-match/${postId}/live-match-page`);
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [canEnterLiveMatch, liveMatch, postId, router]);
 
   async function joinPost() {
     setMsg("");
@@ -155,6 +188,7 @@ export default function MatchLobbyPage() {
       await refresh();
     } catch { setMsg("Backend not reachable."); }
   }
+
   const isTeam = post?.team_id !== null;
   const pps = post?.players_per_side ?? 5;
 
@@ -164,11 +198,8 @@ export default function MatchLobbyPage() {
   const sideAParticipants = post?.participants.filter((p) => p.side === sideAKey) ?? [];
   const sideBParticipants = post?.participants.filter((p) => p.side === sideBKey) ?? [];
 
-  const sideATeamName =
-    sideAParticipants.find((p) => p.team_name)?.team_name || "Side A";
-
-  const sideBTeamName =
-    sideBParticipants.find((p) => p.team_name)?.team_name || "Side B";
+  const sideATeamName = sideAParticipants.find((p) => p.team_name)?.team_name || "Side A";
+  const sideBTeamName = sideBParticipants.find((p) => p.team_name)?.team_name || "Side B";
 
   const sideALabel = isTeam ? sideATeamName : "Side A";
   const sideBLabel = isTeam ? sideBTeamName : "Side B";
@@ -222,6 +253,16 @@ export default function MatchLobbyPage() {
         .ready-btn.not-ready:hover {
           border-color: #2e2e2e; color: #71717a; box-shadow: 0 0 15px rgba(52,211,153,0.06);
         }
+        .live-btn {
+          position: relative; overflow: hidden; width: 100%; border: none;
+          cursor: pointer; font-family: 'DM Sans', sans-serif; font-weight: 800;
+          font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase;
+          padding: 13px 16px; border-radius: 11px; color: #fff;
+          background: linear-gradient(135deg, #065f46 0%, #10b981 45%, #34d399 100%);
+          animation: live-pulse 2s ease-in-out infinite;
+          transition: transform 0.1s ease;
+        }
+        .live-btn:active { transform: scale(0.97); }
         @keyframes ready-pulse {
           0%, 100% { box-shadow: 0 0 0 1px rgba(52,211,153,0.3), 0 0 22px rgba(52,211,153,0.45), 0 0 55px rgba(16,185,129,0.15); }
           50%       { box-shadow: 0 0 0 1px rgba(52,211,153,0.5), 0 0 36px rgba(52,211,153,0.68), 0 0 72px rgba(16,185,129,0.3); }
@@ -231,9 +272,7 @@ export default function MatchLobbyPage() {
           transform: scale(0); animation: ripple-out 0.55s linear forwards; pointer-events: none;
         }
         @keyframes ripple-out { to { transform: scale(4.5); opacity: 0; } }
-        .countdown-glow {
-          animation: count-pulse 1s ease-in-out infinite;
-        }
+        .countdown-glow { animation: count-pulse 1s ease-in-out infinite; }
         @keyframes count-pulse {
           0%, 100% { text-shadow: 0 0 8px rgba(250,204,21,0.4); }
           50%       { text-shadow: 0 0 20px rgba(250,204,21,0.7); }
@@ -353,12 +392,9 @@ export default function MatchLobbyPage() {
                       <h3 style={{ fontSize: 13, fontWeight: 700, color: "#d4d4d8" }}>{sideALabel}</h3>
                       <span style={{ fontSize: 11, color: "#3f3f46" }}>{sideACount}/{pps}</span>
                     </div>
-
-                    {/* Progress bar */}
                     <div style={{ height: 3, background: "#191919", borderRadius: 2, marginBottom: 16, overflow: "hidden" }}>
                       <div style={{ height: "100%", width: `${Math.min(100, (sideACount / pps) * 100)}%`, background: sportColor, borderRadius: 2, transition: "width 0.4s ease" }} />
                     </div>
-
                     {sideAParticipants.length === 0 ? (
                       <div style={{ fontSize: 12, color: "#3f3f46", padding: "12px 0", textAlign: "center" }}>Waiting for players...</div>
                     ) : (
@@ -378,11 +414,7 @@ export default function MatchLobbyPage() {
                               </div>
                               <div>
                                 <div style={{ fontSize: 13, fontWeight: 600, color: "#e4e4e7" }}>{p.username ?? `User ${p.user_id}`}</div>
-                                {p.team_name && (
-                                  <div style={{ fontSize: 10, color: "#3f3f46", marginTop: 1 }}>
-                                    {p.team_name}
-                                  </div>
-                                )}
+                                {p.team_name && <div style={{ fontSize: 10, color: "#3f3f46", marginTop: 1 }}>{p.team_name}</div>}
                               </div>
                             </div>
                             {p.selected_for_match && (
@@ -407,11 +439,9 @@ export default function MatchLobbyPage() {
                       <h3 style={{ fontSize: 13, fontWeight: 700, color: "#d4d4d8" }}>{sideBLabel}</h3>
                       <span style={{ fontSize: 11, color: "#3f3f46" }}>{sideBCount}/{pps}</span>
                     </div>
-
                     <div style={{ height: 3, background: "#191919", borderRadius: 2, marginBottom: 16, overflow: "hidden" }}>
                       <div style={{ height: "100%", width: `${Math.min(100, (sideBCount / pps) * 100)}%`, background: sportColor, borderRadius: 2, transition: "width 0.4s ease" }} />
                     </div>
-
                     {sideBParticipants.length === 0 ? (
                       <div style={{ fontSize: 12, color: "#3f3f46", padding: "12px 0", textAlign: "center" }}>Waiting for players...</div>
                     ) : (
@@ -431,11 +461,7 @@ export default function MatchLobbyPage() {
                               </div>
                               <div>
                                 <div style={{ fontSize: 13, fontWeight: 600, color: "#e4e4e7" }}>{p.username ?? `User ${p.user_id}`}</div>
-                                {p.team_name && (
-                                  <div style={{ fontSize: 10, color: "#3f3f46", marginTop: 1 }}>
-                                    {p.team_name}
-                                  </div>
-                                )}
+                                {p.team_name && <div style={{ fontSize: 10, color: "#3f3f46", marginTop: 1 }}>{p.team_name}</div>}
                               </div>
                             </div>
                             {p.selected_for_match && (
@@ -466,11 +492,11 @@ export default function MatchLobbyPage() {
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
                     <span style={{
                       padding: "4px 10px", borderRadius: 7, fontSize: 10, fontWeight: 800, letterSpacing: "0.07em", textTransform: "uppercase",
-                      background: isConfirmed ? "rgba(52,211,153,0.08)" : isReadyPending ? "rgba(250,204,21,0.08)" : "rgba(161,161,170,0.06)",
-                      border: `1px solid ${isConfirmed ? "rgba(52,211,153,0.2)" : isReadyPending ? "rgba(250,204,21,0.2)" : "rgba(161,161,170,0.12)"}`,
-                      color: isConfirmed ? "#34d399" : isReadyPending ? "#facc15" : "#71717a",
+                      background: canEnterLiveMatch ? "rgba(52,211,153,0.08)" : isConfirmed ? "rgba(52,211,153,0.08)" : isReadyPending ? "rgba(250,204,21,0.08)" : "rgba(161,161,170,0.06)",
+                      border: `1px solid ${canEnterLiveMatch ? "rgba(52,211,153,0.2)" : isConfirmed ? "rgba(52,211,153,0.2)" : isReadyPending ? "rgba(250,204,21,0.2)" : "rgba(161,161,170,0.12)"}`,
+                      color: canEnterLiveMatch ? "#34d399" : isConfirmed ? "#34d399" : isReadyPending ? "#facc15" : "#71717a",
                     }}>
-                      {post.status.replace("_", " ")}
+                      {canEnterLiveMatch ? "live match ready" : post.status.replace("_", " ")}
                     </span>
                   </div>
 
@@ -503,14 +529,26 @@ export default function MatchLobbyPage() {
                   )}
 
                   {/* Confirmed state */}
-                  {isConfirmed && (
+                  {isConfirmed && !liveMatch && (
                     <div style={{
                       padding: "14px 16px", borderRadius: 12, textAlign: "center",
                       background: "rgba(52,211,153,0.06)", border: "1px solid rgba(52,211,153,0.2)",
                       marginBottom: 16,
                     }}>
                       <div style={{ fontSize: 15, fontWeight: 800, color: "#34d399" }}>Match Confirmed</div>
-                      <div style={{ fontSize: 11, color: "#52525b", marginTop: 4 }}>All players are ready. Game on!</div>
+                      <div style={{ fontSize: 11, color: "#52525b", marginTop: 4 }}>Creating live match...</div>
+                    </div>
+                  )}
+
+                  {/* Live match ready banner */}
+                  {canEnterLiveMatch && liveMatch && (
+                    <div style={{
+                      padding: "14px 16px", borderRadius: 12, textAlign: "center",
+                      background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.22)",
+                      marginBottom: 16,
+                    }}>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: "#34d399" }}>Live Match Ready</div>
+                      <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>Redirecting to match #{liveMatch.id}...</div>
                     </div>
                   )}
 
@@ -546,6 +584,7 @@ export default function MatchLobbyPage() {
                         Joined · {myParticipant.side} side
                         {myParticipant.ready && <span style={{ color: "#34d399", fontWeight: 600 }}> · Ready</span>}
                         {!myParticipant.ready && isReadyPending && <span style={{ color: "#facc15", fontWeight: 600 }}> · Awaiting ready</span>}
+                        {canEnterLiveMatch && <span style={{ color: "#34d399", fontWeight: 700 }}> · Match access granted</span>}
                       </div>
                     )}
                   </div>
@@ -596,14 +635,24 @@ export default function MatchLobbyPage() {
                   </button>
                 )}
 
-                {myParticipant?.ready && !isConfirmed && (
+                {myParticipant?.ready && !canEnterLiveMatch && isReadyPending && (
                   <div className="card" style={{ padding: "14px 16px", textAlign: "center" }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "#34d399" }}>You are ready</div>
                     <div style={{ fontSize: 11, color: "#3f3f46", marginTop: 4 }}>Waiting for other players...</div>
                   </div>
                 )}
 
-                {myParticipant && !isConfirmed && (
+                {/* Enter Live Match button — replaces other actions when match is live */}
+                {canEnterLiveMatch && liveMatch && (
+                  <button
+                    className="live-btn"
+                    onClick={() => router.push(`/find-a-match/${postId}/live-match-page`)}
+                  >
+                    Enter Live Match
+                  </button>
+                )}
+
+                {myParticipant && !isConfirmed && !canEnterLiveMatch && (
                   <button
                     className="ghost-btn"
                     onClick={leavePost}
