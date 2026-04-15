@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { authHeaders, clearAuth, getUser } from "@/lib/auth";
 import AuthGate from "@/components/AuthGate";
 
@@ -49,6 +49,11 @@ type Team = {
   city: string;
 };
 
+type LiveMatchLookup = {
+  id: number;
+  status: string;
+};
+
 function getTimeRemaining(expiresAt: string): string {
   const diff = new Date(expiresAt).getTime() - Date.now();
   if (diff <= 0) return "Expired";
@@ -68,6 +73,7 @@ export default function FindAMatchPage() {
   const [loading, setLoading] = useState(true);
   const [messageByPost, setMessageByPost] = useState<Record<number, string>>({});
   const [joinTeamByPost, setJoinTeamByPost] = useState<Record<number, number | "">>({});
+  const [liveMatchByPost, setLiveMatchByPost] = useState<Record<number, LiveMatchLookup>>({});
 
   useEffect(() => { setUser(getUser()); }, []);
   function handleLogout() { clearAuth(); router.push("/login"); }
@@ -92,6 +98,39 @@ export default function FindAMatchPage() {
       }
     })();
   }, []);
+
+  // Poll live match status for any confirmed/ready_pending posts
+  const refreshLiveMatches = useCallback(async (currentPosts: MatchPost[]) => {
+    const relevantPosts = currentPosts.filter(
+      (p) => p.status === "confirmed" || p.status === "ready_pending"
+    );
+    if (relevantPosts.length === 0) return;
+
+    const results = await Promise.allSettled(
+      relevantPosts.map((p) =>
+        fetch(`${API}/posts/${p.id}/live-match`, { headers: authHeaders() })
+          .then((r) => (r.ok ? r.json().then((d: LiveMatchLookup) => ({ postId: p.id, data: d })) : null))
+          .catch(() => null)
+      )
+    );
+
+    setLiveMatchByPost((prev) => {
+      const next = { ...prev };
+      for (const result of results) {
+        if (result.status === "fulfilled" && result.value) {
+          next[result.value.postId] = result.value.data;
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (posts.length === 0) return;
+    refreshLiveMatches(posts);
+    const t = setInterval(() => refreshLiveMatches(posts), 4000);
+    return () => clearInterval(t);
+  }, [posts, refreshLiveMatches]);
 
   async function joinTeamPost(postId: number, teamId?: number) {
     const resolvedTeamId = teamId ?? joinTeamByPost[postId];
@@ -148,6 +187,15 @@ export default function FindAMatchPage() {
         }
         .primary-btn:hover { box-shadow: 0 0 22px rgba(52,211,153,0.35); }
         .primary-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+        .live-btn {
+          border: none; border-radius: 9px; padding: 8px 18px; font-size: 12px;
+          font-weight: 700; color: #fff; cursor: pointer; font-family: inherit;
+          background: linear-gradient(135deg, #065f46 0%, #10b981 45%, #34d399 100%);
+          animation: live-pulse 2s ease-in-out infinite;
+          letter-spacing: 0.04em;
+        }
+        .live-btn:active { transform: scale(0.97); }
+
         .nav-btn {
           background: transparent; border: none; border-radius: 10px; padding: 6px 14px;
           font-size: 13px; color: #52525b; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s;
@@ -224,6 +272,7 @@ export default function FindAMatchPage() {
                 const sportColor = SPORT_COLORS[p.sport_name] || "#4ade80";
                 const pps = p.players_per_side ?? 5;
                 const status = p.status ?? "open";
+                const liveMatch = liveMatchByPost[p.id] ?? null;
                 return (
                   <div key={p.id} className="card" style={{ padding: "20px 22px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
@@ -301,10 +350,16 @@ export default function FindAMatchPage() {
                       </Link>
 
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        {isTeam ? (
+                        {/* Live match button — shown instead of join when a live match exists */}
+                        {liveMatch ? (
+                          <button
+                            className="live-btn"
+                            onClick={() => router.push(`/find-a-match/${p.id}/live-match-page`)}
+                          >
+                            Enter Live Match
+                          </button>
+                        ) : isTeam ? (
                           <>
-                            {/* The join team button. Autofinds the user's team for that sport, or reflects that they don't have a team*/}
-                            {/* Should this be its own function? probably */}
                             {(() => {
                               const team = userTeams.find((t) => t.sport === p.sport_name);
                               return (
@@ -344,6 +399,7 @@ export default function FindAMatchPage() {
               })}
             </div>
           )}
+          
         </main>
       </div>
     </AuthGate>
