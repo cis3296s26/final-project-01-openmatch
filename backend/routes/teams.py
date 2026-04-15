@@ -233,8 +233,24 @@ async def leave_team(team_id: int, current_user: dict = Depends(get_current_user
         user_id = int(current_user["sub"]);
 
         # If the user is the captain, will need to pass on ownership. Defaults to the most senior team member
-        captain_is_leaving = is_captain(conn, user_id, team_id);
-    
+        captain_is_leaving = is_captain(conn, user_id, team_id)
+
+        senior_player = conn.execute(
+            text(
+                """
+                SELECT user_id FROM team_members
+                WHERE team_id = :team_id
+                AND user_id <> :captain_id
+                ORDER BY joined_at ASC
+                LIMIT 1
+                """
+            ),
+            { "captain_id": user_id, "team_id": team_id }
+        ).mappings().first()
+        
+
+        if not senior_player:
+            raise HTTPException(status_code=403, detail="Can't leave the team if you're the only member! Please delete instead.")
 
         try:
             row = conn.execute(
@@ -255,18 +271,6 @@ async def leave_team(team_id: int, current_user: dict = Depends(get_current_user
             
             # If the captain has left, update the next users role to captain
             if (captain_is_leaving):
-                senior_player = conn.execute(
-                    text(
-                        """
-                        SELECT user_id FROM team_members
-                        WHERE team_id = :team_id
-                        ORDER BY joined_at ASC
-                        LIMIT 1
-                        """
-                    ),
-                    { "team_id": team_id }
-                ).mappings().first()
-
                 conn.execute(
                     text(
                         """
