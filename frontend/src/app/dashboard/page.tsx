@@ -1077,15 +1077,15 @@ export default function OpenMatchDashboard() {
                         }}
                       >
                         <option value="">Choose a team...</option>
-                        {teams.length > 0 ? (
-                          teams.map((team) => (
+                        {myTeams.length > 0 ? (
+                          myTeams.map((team) => (
                             <option key={team.id} value={team.id}>{team.name} ({team.sport})</option>
                           ))
                         ) : (
                           <option value="" disabled>No teams available</option>
                         )}
                       </select>
-                      {teams.length === 0 && (
+                      {myTeams.length === 0 && (
                         <p style={{ fontSize: 11, color: "#71717a", marginTop: 6 }}>
                           You need to create or join a team first.
                         </p>
