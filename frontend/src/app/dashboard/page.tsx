@@ -20,6 +20,21 @@ type Team = {
   city: string;
 };
 
+type ProfileSport = {
+    id: number;
+    profile_id: number;
+    sport_id: number;
+    sport_name: string;
+    mmr: number;
+    matches_played: number;
+    wins: number;
+    losses: number;
+    placement_matches_remaining: number;
+    rank_tier: string;
+    created_at: string;
+    updated_at: string;
+};
+
 type MatchPost = {
   id: number;
   user_id: number;
@@ -144,6 +159,8 @@ export default function OpenMatchDashboard() {
   const [formIsCompetitive, setFormIsCompetitive] = useState(false);
   const [myTeams, setMyTeams] = useState<MyTeam[]>([]);
   const [myTeamsLoading, setMyTeamsLoading] = useState(true);
+  const [mySports, setMySports] = useState<ProfileSport[]>([]);
+  const [mySportsLoading, setMySportsLoading] = useState(true);
 
   const [formSportId, setFormSportId] = useState<number | null>(null);
   const [formTeamId, setFormTeamId] = useState<number | null>(null);
@@ -172,8 +189,27 @@ export default function OpenMatchDashboard() {
       fetchUserPosts(currentUser.id);
       fetchRecentMatches(currentUser.id);
       fetchMyTeams(currentUser.id);
+      fetchMySports(currentUser.id)
     }
   }, []);
+
+  async function fetchMySports(userId: number) {
+    setMySportsLoading(true);
+    try {
+      const res = await fetch(`${API}/users/${userId}/profile-sports`, {
+        headers: authHeaders(),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setMySports(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch my sports.")
+    } finally {
+      setMySportsLoading(false);
+    }
+  }
 
   async function fetchMyTeams(userId: number) {
     setMyTeamsLoading(true);
@@ -1065,9 +1101,13 @@ export default function OpenMatchDashboard() {
                         value={formSportId ?? ""}
                         onChange={(e) => setFormSportId(e.target.value ? Number(e.target.value) : null)}
                       >
-                        <option value="">Select a sport...</option>
-                        {sports.map((sport) => (
-                          <option key={sport.id} value={sport.id}>{sport.name}</option>
+                        
+                        <option value="">
+                          {mySportsLoading ? "Loading Sports..." : 
+                          ( mySports.length === 0 ? "No sports found! Please create one in your profile." : "Select a sport...")}
+                        </option>
+                          {!mySportsLoading && mySports.length>0 && mySports.map((sport) => (
+                        <option key={sport.sport_id} value={sport.sport_id}>{sport.sport_name}</option>
                         ))}
                       </select>
                     </div>
