@@ -12,7 +12,7 @@ services:
       - key: APP_ENV
         value: prod
       - key: FRONTEND_URL
-        value: https://openmatch-frontend.onrender.com
+        value: https://openmatch-frontend-osdn.onrender.com
       - key: RESEND_API_KEY
         sync: false
       - key: YELP_API_KEY
