@@ -41,9 +41,9 @@ services:
     autoDeployTrigger: commit
     envVars:
       - key: NEXT_PUBLIC_API_BASE_URL
-        value: https://openmatch-backend-tsqb.onrender.com/
+        value: https://openmatch-backend-tsqb.onrender.com
       - key: NEXT_PUBLIC_WS_BASE_URL
-        value: wss://openmatch-backend-tsqb.onrender.com/
+        value: wss://openmatch-backend-tsqb.onrender.com
 
   - type: keyvalue
     name: openmatch-redis
