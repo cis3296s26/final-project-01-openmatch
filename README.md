@@ -170,9 +170,9 @@ Finally click save.
 
 # Live Web-app
 
-https://openmatch-frontend.onrender.com
+https://openmatch-frontend-osdn.onrender.com/
 
-https://openmatch-backend.onrender.com/health
+https://openmatch-backend-tsqb.onrender.com/health
 
 # How to contribute
 Follow this project board to know the latest status of the project: [https://github.com/orgs/cis3296s26/projects/28](https://github.com/orgs/cis3296s26/projects/28)  
