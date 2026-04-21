@@ -30,12 +30,15 @@ async def create_team(payload: TeamCreateForm, current_user: dict = Depends(get_
             if not verify_user_has_sport_profile(conn, user_id, payload.sport_id):
                 raise HTTPException(status_code=403, detail="You must create sport profile for this team's sport")
 
+            # Define invite only
+            invite_only = not payload.is_open
+
             row = conn.execute(
                 text(
                     """
                     WITH inserted_team AS (
-                        INSERT INTO teams (name, sport_id, city)
-                        VALUES (:name, :sport_id, :city)
+                        INSERT INTO teams (name, sport_id, city, invite_only)
+                        VALUES (:name, :sport_id, :city, :invite_only)
                         RETURNING id, name, sport_id, city, created_at
                     )
                     SELECT it.id, it.name, it.city, it.sport_id, s.name AS sport
@@ -43,7 +46,7 @@ async def create_team(payload: TeamCreateForm, current_user: dict = Depends(get_
                     JOIN sports s ON it.sport_id = s.id;
                     """
                 ),
-                {"name": payload.name, "sport_id": payload.sport_id, "city": payload.city},
+                {"name": payload.name, "sport_id": payload.sport_id, "city": payload.city, "invite_only": invite_only},
             ).mappings().one()
             result = dict(row)
 
@@ -88,7 +91,7 @@ def list_teams():
         rows = conn.execute(
             text(
                 """
-                SELECT t.id, t.name, t.sport_id, t.city, s.name AS sport
+                SELECT t.id, t.name, t.sport_id, t.city, t.invite_only, s.name AS sport
                 FROM teams t
                 JOIN sports s ON t.sport_id = s.id
                 ORDER BY id DESC
@@ -131,17 +134,17 @@ async def edit_team_name(team_id: int, payload: editTeam, current_user: dict = D
             if not user_is_captain:
                 raise HTTPException(status_code=403, detail="User does not have permissions to edit this team!")
             
-            # Update team name accordingly
             conn.execute(
                 text(
                     """
                     UPDATE teams
-                    SET name = :name WHERE id= :team_id
+                    SET name = :name, invite_only = :invite_only WHERE id = :team_id
                     """
                 ),
                 {
                     "team_id": team_id,
-                    "name": payload.name
+                    "name": payload.name,
+                    "invite_only": payload.invite_only,
                 }
             )
 
@@ -206,6 +209,18 @@ async def join_team(team_id: int, payload: joinTeam, current_user: dict = Depend
             # Check if this user has a sports profile for the team being joined, prevent if true
             if not verify_user_has_sport_profile(conn, user_id, payload.sport_id):
                 raise HTTPException(status_code=403, detail="You must create sport profile for this team's sport")
+
+            # Does the team exist, and can it be joined?
+            team = conn.execute(
+                text("SELECT invite_only FROM teams WHERE id = :team_id"),
+                {"team_id": team_id}
+            ).mappings().first()
+
+            if not team:
+                raise HTTPException(status_code=404, detail="Team not found")
+
+            if team["invite_only"]:
+                raise HTTPException(status_code=403, detail="This team is invite only")
 
             row = conn.execute(
                 text(
@@ -413,6 +428,7 @@ def get_team_profile(
                     t.city,
                     t.created_at,
                     t.description,
+                    t.invite_only,
                     ts.team_mmr,
                     ts.matches_played,
                     ts.wins,
@@ -483,6 +499,7 @@ def get_team_profile(
         "sport": team_row["sport"],
         "city": team_row["city"],
         "description": team_row["description"],
+        "invite_only": team_row["invite_only"],
         "rank": rank,
         "created_at": team_row["created_at"],
         "member_count": len(members),

@@ -17,6 +17,7 @@ type Team = {
   city: string;
   rank?: string;
   is_member: boolean;
+  invite_only: boolean;
 };
 
 // Sport Type
@@ -607,13 +608,21 @@ export default function MyTeamsPage() {
                             >
                               View
                             </Link>
-                            <button
-                              className="join-btn"
-                              disabled={isJoining}
-                              onClick={() => handleJoinTeam(team.id)}
-                            >
-                              {isJoining ? "Joining..." : "Join"}
-                            </button>
+
+                            {/* Disactivate join button if the team is invite only */}
+                            {team.invite_only ? (
+                              <button className="join-btn" disabled style={{ opacity: 0.4, cursor: "not-allowed" }}>
+                                Team is Invite Only
+                              </button>
+                            ) : (
+                              <button
+                                className="join-btn"
+                                disabled={isJoining}
+                                onClick={() => handleJoinTeam(team.id)}
+                              >
+                                {isJoining ? "Joining..." : "Join"}
+                              </button>
+                            )}
                           </div>
                         </div>
                       );

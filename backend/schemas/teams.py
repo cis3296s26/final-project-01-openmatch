@@ -43,6 +43,7 @@ class TeamCreateForm(BaseModel):
     name: str
     sport_id: int
     city: str
+    is_open: bool
 
 class joinTeam(BaseModel):
     role: str
@@ -50,6 +51,7 @@ class joinTeam(BaseModel):
 
 class editTeam(BaseModel):
     name: str
+    invite_only: bool
 
 class inviteUser(BaseModel):
     username: str

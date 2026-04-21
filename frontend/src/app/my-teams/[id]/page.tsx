@@ -41,6 +41,7 @@ type Team = {
     created_at: string;
     description: string | null;
     mmr: number;
+    invite_only: boolean;
 };
 
 const SPORT_COLORS: Record<string, string> = {
@@ -82,13 +83,16 @@ export default function TeamProfilePage() {
     const [canEdit, setCanEdit] = useState(false);
     const [canInvite, setCanInvite] = useState(false);
     const [editModalOpen, setEditModalOpen] = useState(false);
+    
     const [inviteModalOpen, setInviteModalOpen] = useState(false);
     const [inviteUsername, setInviteUsername] = useState("");
     const [inviteLoading, setInviteLoading] = useState(false);
     const [inviteError, setInviteError] = useState<string | null>(null);
     const [inviteUrl, setInviteUrl] = useState<string | null>(null);
     const [inviteCopied, setInviteCopied] = useState(false);
+
     const [editName, setEditName] = useState("");
+    const [editInviteOnly, setEditInviteOnly] = useState(false);
     const [editSaving, setEditSaving] = useState(false);
     const [editError, setEditError] = useState<string | null>(null);
     const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -123,6 +127,7 @@ export default function TeamProfilePage() {
             ties: data.stats.ties,
             member_count: data.member_count,
             created_at: data.created_at,
+            invite_only: Boolean(data.invite_only),
           });
 
           setMembers(data.members);
@@ -170,6 +175,7 @@ export default function TeamProfilePage() {
     function openEditModal() {
         if (!team) return;
         setEditName(team.name);
+        setEditInviteOnly(team.invite_only);
         setEditError(null);
         setDeleteConfirm(false);
         setDeleteError(null);
@@ -191,10 +197,10 @@ export default function TeamProfilePage() {
             const res = await fetch(`${API}/teams/${team.id}`, {
                 method: "PATCH",
                 headers: authHeaders(),
-                body: JSON.stringify({ name: editName.trim() }),
+                body: JSON.stringify({ name: editName.trim(), invite_only: editInviteOnly }),
             });
             if (res.ok) {
-                setTeam((prev) => prev ? { ...prev, name: editName.trim() } : prev);
+                setTeam((prev) => prev ? { ...prev, name: editName.trim(), invite_only: editInviteOnly } : prev);
                 closeEditModal();
             } else {
                 const data = await res.json().catch(() => ({}));
@@ -721,6 +727,29 @@ const recentResults = matches.slice(0, 10).map((m) => m.result === "win" ? "W" :
                       )}
                   </div>
 
+                  {/* Join policy toggle */}
+                  <div style={{ marginBottom: 24 }}>
+                      <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                          Join Policy
+                      </label>
+                      <div style={{ display: "flex", background: "#111", border: "1px solid #2a2a2a", borderRadius: 10, padding: 3, gap: 3 }}>
+                          {[{ label: "Open", value: false }, { label: "Invite Only", value: true }].map(({ label, value }) => (
+                              <button
+                                  key={label}
+                                  onClick={() => setEditInviteOnly(value)}
+                                  style={{
+                                      flex: 1, padding: "7px 0", fontSize: 12, fontWeight: 600, borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
+                                      background: editInviteOnly === value ? "#1e1e1e" : "transparent",
+                                      color: editInviteOnly === value ? "#fafafa" : "#52525b",
+                                      boxShadow: editInviteOnly === value ? "0 1px 4px rgba(0,0,0,0.4)" : "none",
+                                  }}
+                              >
+                              {label}
+                              </button>
+                          ))}
+                      </div>
+                  </div>
+
                   {/* Save / Cancel */}
                   <div style={{ display: "flex", gap: 10, marginBottom: 28 }}>
                       <button className="modal-save-btn" onClick={handleSaveName} disabled={editSaving || !editName.trim()}>
@@ -765,6 +794,7 @@ const recentResults = matches.slice(0, 10).map((m) => m.result === "win" ? "W" :
               </div>
           </div>
       )}
+      
       {/* ── Invite Player Modal ── */}
       {inviteModalOpen && (
           <div className="modal-overlay" onClick={closeInviteModal}>
