@@ -50,3 +50,6 @@ class joinTeam(BaseModel):
 
 class editTeam(BaseModel):
     name: str
+
+class inviteUser(BaseModel):
+    username: str
