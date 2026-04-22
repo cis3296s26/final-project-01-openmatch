@@ -6,12 +6,16 @@ from core.database import engine, r
 from core.security import get_current_user
 from core.websocket import manager
 
+from core.config import FRONTEND_URL
 from core.teams import verify_user_has_sport_profile, is_captain
 from core.teams import verify_user_has_sport_profile
 from core.ranking import get_rank_from_mmr
-from schemas.teams import TeamMember, TeamStats, TeamProfile, Team, TeamCreateForm, joinTeam, editTeam
+from schemas.teams import TeamMember, TeamStats, TeamProfile, Team, TeamCreateForm, joinTeam, editTeam, inviteUser
 
 from utils.time import now_iso
+
+import secrets
+import hashlib
 
 router = APIRouter(tags=["teams"])
 
@@ -26,12 +30,15 @@ async def create_team(payload: TeamCreateForm, current_user: dict = Depends(get_
             if not verify_user_has_sport_profile(conn, user_id, payload.sport_id):
                 raise HTTPException(status_code=403, detail="You must create sport profile for this team's sport")
 
+            # Define invite only
+            invite_only = not payload.is_open
+
             row = conn.execute(
                 text(
                     """
                     WITH inserted_team AS (
-                        INSERT INTO teams (name, sport_id, city)
-                        VALUES (:name, :sport_id, :city)
+                        INSERT INTO teams (name, sport_id, city, invite_only)
+                        VALUES (:name, :sport_id, :city, :invite_only)
                         RETURNING id, name, sport_id, city, created_at
                     )
                     SELECT it.id, it.name, it.city, it.sport_id, s.name AS sport
@@ -39,7 +46,7 @@ async def create_team(payload: TeamCreateForm, current_user: dict = Depends(get_
                     JOIN sports s ON it.sport_id = s.id;
                     """
                 ),
-                {"name": payload.name, "sport_id": payload.sport_id, "city": payload.city},
+                {"name": payload.name, "sport_id": payload.sport_id, "city": payload.city, "invite_only": invite_only},
             ).mappings().one()
             result = dict(row)
 
@@ -84,7 +91,7 @@ def list_teams():
         rows = conn.execute(
             text(
                 """
-                SELECT t.id, t.name, t.sport_id, t.city, s.name AS sport
+                SELECT t.id, t.name, t.sport_id, t.city, t.invite_only, s.name AS sport
                 FROM teams t
                 JOIN sports s ON t.sport_id = s.id
                 ORDER BY id DESC
@@ -127,17 +134,17 @@ async def edit_team_name(team_id: int, payload: editTeam, current_user: dict = D
             if not user_is_captain:
                 raise HTTPException(status_code=403, detail="User does not have permissions to edit this team!")
             
-            # Update team name accordingly
             conn.execute(
                 text(
                     """
                     UPDATE teams
-                    SET name = :name WHERE id= :team_id
+                    SET name = :name, invite_only = :invite_only WHERE id = :team_id
                     """
                 ),
                 {
                     "team_id": team_id,
-                    "name": payload.name
+                    "name": payload.name,
+                    "invite_only": payload.invite_only,
                 }
             )
 
@@ -202,6 +209,18 @@ async def join_team(team_id: int, payload: joinTeam, current_user: dict = Depend
             # Check if this user has a sports profile for the team being joined, prevent if true
             if not verify_user_has_sport_profile(conn, user_id, payload.sport_id):
                 raise HTTPException(status_code=403, detail="You must create sport profile for this team's sport")
+
+            # Does the team exist, and can it be joined?
+            team = conn.execute(
+                text("SELECT invite_only FROM teams WHERE id = :team_id"),
+                {"team_id": team_id}
+            ).mappings().first()
+
+            if not team:
+                raise HTTPException(status_code=404, detail="Team not found")
+
+            if team["invite_only"]:
+                raise HTTPException(status_code=403, detail="This team is invite only")
 
             row = conn.execute(
                 text(
@@ -409,6 +428,7 @@ def get_team_profile(
                     t.city,
                     t.created_at,
                     t.description,
+                    t.invite_only,
                     ts.team_mmr,
                     ts.matches_played,
                     ts.wins,
@@ -479,6 +499,7 @@ def get_team_profile(
         "sport": team_row["sport"],
         "city": team_row["city"],
         "description": team_row["description"],
+        "invite_only": team_row["invite_only"],
         "rank": rank,
         "created_at": team_row["created_at"],
         "member_count": len(members),
@@ -496,3 +517,115 @@ def get_team_profile(
             "can_edit": viewer_role == "captain",
         },
     }
+
+# Generate an invite link for the team and user
+@router.post("/teams/{team_id}/invite")
+async def invite_user(team_id: int, payload: inviteUser, current_user: dict = Depends(get_current_user)):
+    with engine.begin() as conn:
+        user_id = int(current_user["sub"])
+
+        # Verify requester is a member of the team
+        requester = conn.execute(
+            text("SELECT id FROM team_members WHERE team_id = :team_id AND user_id = :user_id"),
+            {"team_id": team_id, "user_id": user_id}
+        ).first()
+
+        if not requester:
+            raise HTTPException(status_code=403, detail="You must be a team member to send invites")
+
+        # Look up the invitee by username, to make sure the user exists
+        invitee = conn.execute(
+            text("SELECT id FROM users WHERE username = :username"),
+            {"username": payload.username}
+        ).mappings().first()
+
+        if not invitee:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        invitee_id = invitee["id"]
+
+        # Prevent inviting someone already on the team
+        already_member = conn.execute(
+            text("SELECT id FROM team_members WHERE team_id = :team_id AND user_id = :user_id"),
+            {"team_id": team_id, "user_id": invitee_id}
+        ).first()
+
+        if already_member:
+            raise HTTPException(status_code=409, detail="User is already a member of this team")
+
+        # Generate invite token
+        plaintext_token = secrets.token_urlsafe(32)
+        hashed_token = hashlib.sha256(plaintext_token.encode()).hexdigest()
+        invite_url = f"{FRONTEND_URL}/my-teams/invite?token={plaintext_token}"
+
+        # Insert invite record into team_invite
+        conn.execute(
+            text("""
+                INSERT INTO team_invite (user_id, team_id, token_hash)
+                VALUES (:user_id, :team_id, :token_hash)
+            """),
+            {"user_id": invitee_id, "team_id": team_id, "token_hash": hashed_token}
+        )
+
+        return {"invite_url": invite_url}
+
+# the endpoint called when a user clicks on an invite link
+@router.post("/teams/invite")
+async def accept_invite(token: str, current_user: dict = Depends(get_current_user)):
+    with engine.begin() as conn:
+        user_id = int(current_user["sub"])
+
+        # Hash the incoming token to look it up
+        hashed_token = hashlib.sha256(token.encode()).hexdigest()
+
+        # Look up the invite to make sure it exists
+        invite = conn.execute(
+            text("SELECT id, user_id, team_id FROM team_invite WHERE token_hash = :token_hash"),
+            {"token_hash": hashed_token}
+        ).mappings().first()
+
+        if not invite:
+            raise HTTPException(status_code=404, detail="Invalid or expired invite link")
+
+        # Verify the logged-in user matches the invited user
+        if invite["user_id"] != user_id:
+            raise HTTPException(status_code=403, detail="This invite was not issued to you")
+
+        team_id = invite["team_id"]
+
+        # Get the team's sport_id so we can insert into team_members
+        team = conn.execute(
+            text("SELECT sport_id FROM teams WHERE id = :team_id"),
+            {"team_id": team_id}
+        ).mappings().first()
+
+        if not team:
+            raise HTTPException(status_code=404, detail="Team no longer exists")
+
+        # Check if this user has a sports profile for the team being joined, prevent if true
+        if not verify_user_has_sport_profile(conn, user_id, team.sport_id):
+            raise HTTPException(status_code=403, detail="You must create sport profile for this team's sport")
+
+        # If everything checks out, add that user to the team, default role to 'member'
+        try:
+            conn.execute(
+                text("""
+                    INSERT INTO team_members (user_id, team_id, sport_id, role)
+                    VALUES (:user_id, :team_id, :sport_id, 'member')
+                """),
+                {"user_id": user_id, "team_id": team_id, "sport_id": team["sport_id"]}
+            )
+        except IntegrityError as e:
+            err = str(e.orig) if e.orig else ""
+            if "team_members_user_id_sport_id_key" in err:
+                raise HTTPException(status_code=409, detail="You are already on a team for this sport")
+            raise HTTPException(status_code=409, detail="You are already a member of this team")
+
+        # Delete the used invite token
+        conn.execute(
+            text("DELETE FROM team_invite WHERE id = :id"),
+            {"id": invite["id"]}
+        )
+
+        # Return OK status and team id joined
+        return {"ok": True, "team_id": team_id}

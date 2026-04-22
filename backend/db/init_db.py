@@ -55,6 +55,7 @@ def init_db() -> None:
                     sport_id INT NOT NULL REFERENCES sports(id),
                     description TEXT,
                     city TEXT NOT NULL,
+                    invite_only BOOLEAN NOT NULL DEFAULT FALSE,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     UNIQUE(name, sport_id)
                 );
@@ -68,6 +69,14 @@ def init_db() -> None:
                     joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     UNIQUE(team_id, user_id),
                     UNIQUE(user_id, sport_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS team_invite (
+                    id SERIAL PRIMARY KEY,
+                    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    team_id INT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
 
                 CREATE TABLE IF NOT EXISTS team_stats (

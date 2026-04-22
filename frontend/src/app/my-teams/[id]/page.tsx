@@ -41,6 +41,7 @@ type Team = {
     created_at: string;
     description: string | null;
     mmr: number;
+    invite_only: boolean;
 };
 
 const SPORT_COLORS: Record<string, string> = {
@@ -82,7 +83,16 @@ export default function TeamProfilePage() {
     const [canEdit, setCanEdit] = useState(false);
     const [canInvite, setCanInvite] = useState(false);
     const [editModalOpen, setEditModalOpen] = useState(false);
+    
+    const [inviteModalOpen, setInviteModalOpen] = useState(false);
+    const [inviteUsername, setInviteUsername] = useState("");
+    const [inviteLoading, setInviteLoading] = useState(false);
+    const [inviteError, setInviteError] = useState<string | null>(null);
+    const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+    const [inviteCopied, setInviteCopied] = useState(false);
+
     const [editName, setEditName] = useState("");
+    const [editInviteOnly, setEditInviteOnly] = useState(false);
     const [editSaving, setEditSaving] = useState(false);
     const [editError, setEditError] = useState<string | null>(null);
     const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -117,6 +127,7 @@ export default function TeamProfilePage() {
             ties: data.stats.ties,
             member_count: data.member_count,
             created_at: data.created_at,
+            invite_only: Boolean(data.invite_only),
           });
 
           setMembers(data.members);
@@ -164,6 +175,7 @@ export default function TeamProfilePage() {
     function openEditModal() {
         if (!team) return;
         setEditName(team.name);
+        setEditInviteOnly(team.invite_only);
         setEditError(null);
         setDeleteConfirm(false);
         setDeleteError(null);
@@ -185,10 +197,10 @@ export default function TeamProfilePage() {
             const res = await fetch(`${API}/teams/${team.id}`, {
                 method: "PATCH",
                 headers: authHeaders(),
-                body: JSON.stringify({ name: editName.trim() }),
+                body: JSON.stringify({ name: editName.trim(), invite_only: editInviteOnly }),
             });
             if (res.ok) {
-                setTeam((prev) => prev ? { ...prev, name: editName.trim() } : prev);
+                setTeam((prev) => prev ? { ...prev, name: editName.trim(), invite_only: editInviteOnly } : prev);
                 closeEditModal();
             } else {
                 const data = await res.json().catch(() => ({}));
@@ -199,6 +211,53 @@ export default function TeamProfilePage() {
         } finally {
             setEditSaving(false);
         }
+    }
+
+    function openInviteModal() {
+        setInviteUsername("");
+        setInviteError(null);
+        setInviteUrl(null);
+        setInviteCopied(false);
+        setInviteModalOpen(true);
+    }
+
+    function closeInviteModal() {
+        setInviteModalOpen(false);
+        setInviteUsername("");
+        setInviteError(null);
+        setInviteUrl(null);
+        setInviteCopied(false);
+    }
+
+    async function handleSendInvite() {
+        if (!inviteUsername.trim()) return;
+        setInviteLoading(true);
+        setInviteError(null);
+        try {
+            const res = await fetch(`${API}/teams/${teamId}/invite`, {
+                method: "POST",
+                headers: authHeaders(),
+                body: JSON.stringify({ username: inviteUsername.trim() }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) {
+                setInviteUrl(data.invite_url);
+            } else {
+                setInviteError(data.detail || "Failed to generate invite link.");
+            }
+        } catch {
+            setInviteError("Network error. Please try again.");
+        } finally {
+            setInviteLoading(false);
+        }
+    }
+
+    function handleCopyInvite() {
+        if (!inviteUrl) return;
+        navigator.clipboard.writeText(inviteUrl).then(() => {
+            setInviteCopied(true);
+            setTimeout(() => setInviteCopied(false), 2000);
+        });
     }
 
     async function handleDeleteTeam() {
@@ -575,10 +634,10 @@ const recentResults = matches.slice(0, 10).map((m) => m.result === "win" ? "W" :
                   </div>
                 ))}
 
-                {/* TODO: show Invite button if current user is captain */}
+                {/* Shows invite button if current user is captain */}
                 {canInvite && (
                   <div style={{ padding: "12px 16px", borderTop: "1px solid #131313" }}>
-                    <button className="ghost-btn" style={{ width: "100%" }}>
+                    <button className="ghost-btn" style={{ width: "100%" }} onClick={openInviteModal}>
                       + Invite Player
                     </button>
                   </div>
@@ -668,6 +727,29 @@ const recentResults = matches.slice(0, 10).map((m) => m.result === "win" ? "W" :
                       )}
                   </div>
 
+                  {/* Join policy toggle */}
+                  <div style={{ marginBottom: 24 }}>
+                      <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                          Join Policy
+                      </label>
+                      <div style={{ display: "flex", background: "#111", border: "1px solid #2a2a2a", borderRadius: 10, padding: 3, gap: 3 }}>
+                          {[{ label: "Open", value: false }, { label: "Invite Only", value: true }].map(({ label, value }) => (
+                              <button
+                                  key={label}
+                                  onClick={() => setEditInviteOnly(value)}
+                                  style={{
+                                      flex: 1, padding: "7px 0", fontSize: 12, fontWeight: 600, borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
+                                      background: editInviteOnly === value ? "#1e1e1e" : "transparent",
+                                      color: editInviteOnly === value ? "#fafafa" : "#52525b",
+                                      boxShadow: editInviteOnly === value ? "0 1px 4px rgba(0,0,0,0.4)" : "none",
+                                  }}
+                              >
+                              {label}
+                              </button>
+                          ))}
+                      </div>
+                  </div>
+
                   {/* Save / Cancel */}
                   <div style={{ display: "flex", gap: 10, marginBottom: 28 }}>
                       <button className="modal-save-btn" onClick={handleSaveName} disabled={editSaving || !editName.trim()}>
@@ -709,6 +791,65 @@ const recentResults = matches.slice(0, 10).map((m) => m.result === "win" ? "W" :
                           </div>
                       )}
                   </div>
+              </div>
+          </div>
+      )}
+      
+      {/* ── Invite Player Modal ── */}
+      {inviteModalOpen && (
+          <div className="modal-overlay" onClick={closeInviteModal}>
+              <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+                      <h2 style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.03em", color: "#fafafa" }}>Invite Player</h2>
+                      <button onClick={closeInviteModal} style={{ background: "transparent", border: "none", color: "#52525b", fontSize: 20, cursor: "pointer", lineHeight: 1, padding: 0 }}>✕</button>
+                  </div>
+
+                  {!inviteUrl ? (
+                      <>
+                          <div style={{ marginBottom: 20 }}>
+                              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                                  Username
+                              </label>
+                              <input
+                                  className="modal-input"
+                                  value={inviteUsername}
+                                  onChange={(e) => setInviteUsername(e.target.value)}
+                                  onKeyDown={(e) => e.key === "Enter" && handleSendInvite()}
+                                  placeholder="Enter player username"
+                                  autoFocus
+                              />
+                              {inviteError && (
+                                  <p style={{ marginTop: 8, fontSize: 12, color: "#f87171" }}>{inviteError}</p>
+                              )}
+                          </div>
+                          <div style={{ display: "flex", gap: 10 }}>
+                              <button className="modal-save-btn" onClick={handleSendInvite} disabled={inviteLoading || !inviteUsername.trim()}>
+                                  {inviteLoading ? "Generating…" : "Generate Invite Link"}
+                              </button>
+                              <button className="modal-cancel-btn" onClick={closeInviteModal} disabled={inviteLoading}>
+                                  Cancel
+                              </button>
+                          </div>
+                      </>
+                  ) : (
+                      <>
+                          <p style={{ fontSize: 13, color: "#71717a", marginBottom: 16, lineHeight: 1.5 }}>
+                              Share this link with <strong style={{ color: "#e4e4e7" }}>{inviteUsername}</strong>. It can only be used by them.
+                          </p>
+                          <div style={{ display: "flex", gap: 8, alignItems: "center", background: "#111", border: "1px solid #2a2a2a", borderRadius: 10, padding: "10px 14px", marginBottom: 20 }}>
+                              <span style={{ flex: 1, fontSize: 12, color: "#71717a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {inviteUrl}
+                              </span>
+                              <button
+                                  onClick={handleCopyInvite}
+                                  style={{ flexShrink: 0, background: inviteCopied ? "rgba(74,222,128,0.1)" : "#1a1a1a", border: `1px solid ${inviteCopied ? "rgba(74,222,128,0.3)" : "#2a2a2a"}`, borderRadius: 7, padding: "5px 12px", fontSize: 12, fontWeight: 600, color: inviteCopied ? "#4ade80" : "#a1a1aa", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}
+                              >
+                                  {inviteCopied ? "Copied!" : "Copy"}
+                              </button>
+                          </div>
+                          <button className="modal-cancel-btn" onClick={closeInviteModal}>Done</button>
+                      </>
+                  )}
               </div>
           </div>
       )}
