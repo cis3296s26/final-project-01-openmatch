@@ -8,7 +8,7 @@ class MatchPostCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=100)
     skill: str = Field(..., min_length=1, max_length=50)
     is_competitive: bool = False
-    location: Optional[str] = Field(default=None, max_length=100)
+    location: Optional[str] = Field(default=None, max_length=255)
     note: Optional[str] = Field(default=None, max_length=500)
     expires_in_minutes: int = Field(..., gt=0, le=1440)
     players_per_side: int = Field(default=5, ge=1, le=50)
@@ -17,7 +17,7 @@ class MatchPostCreate(BaseModel):
 class MatchPostUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=100)
     skill: Optional[str] = Field(default=None, min_length=1, max_length=50)
-    location: Optional[str] = Field(default=None, max_length=100)
+    location: Optional[str] = Field(default=None, max_length=255)
     note: Optional[str] = Field(default=None, max_length=500)
 
 class MatchPostJoin(BaseModel):

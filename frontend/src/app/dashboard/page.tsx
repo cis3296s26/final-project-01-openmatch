@@ -84,6 +84,15 @@ type MyTeam = {
   rank: string;
 };
 
+type FieldBusiness = {
+  id: string;
+  name: string;
+  location: {
+    display_address: string[];
+  };
+  distance?: number;
+};
+
 const SPORT_COLORS: Record<string, string> = {
   "Soccer": "#4ade80",
   "Basketball": "#fb923c",
@@ -176,6 +185,12 @@ export default function OpenMatchDashboard() {
   const [formExpiration, setFormExpiration] = useState(60);
   const [formPlayersPerSide, setFormPlayersPerSide] = useState(5);
   const [formSubmitting, setFormSubmitting] = useState(false);
+
+  const [locationQuery, setLocationQuery] = useState("");
+  const [fieldResults, setFieldResults] = useState<FieldBusiness[]>([]);
+  const [fieldSearchLoading, setFieldSearchLoading] = useState(false);
+  const [showFieldDropdown, setShowFieldDropdown] = useState(false);
+  const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
 
 
 
@@ -367,6 +382,11 @@ export default function OpenMatchDashboard() {
     setFormPlayersPerSide(5);
     setPostMessage("");
     setShowPostModal(true);
+    setLocationQuery("");
+    setFieldResults([]);
+    setFieldSearchLoading(false);
+    setShowFieldDropdown(false);
+    setSelectedFieldId(null);
   }
 
   function openEditModal(post: MatchPost) {
@@ -379,12 +399,21 @@ export default function OpenMatchDashboard() {
     setFormNote(post.note || "");
     setPostMessage("");
     setShowPostModal(true);
+    setLocationQuery(post.location || "");
+    setFieldResults([]);
+    setShowFieldDropdown(false);
+    setSelectedFieldId(null);
   }
 
   function closeModal() {
     setShowPostModal(false);
     setEditingPost(null);
     setPostMessage("");
+    setLocationQuery("");
+    setFieldResults([]);
+    setFieldSearchLoading(false);
+    setShowFieldDropdown(false);
+    setSelectedFieldId(null);
   }
 
   async function handleCreatePost() {
@@ -400,6 +429,11 @@ export default function OpenMatchDashboard() {
 
     setFormSubmitting(true);
     setPostMessage("");
+
+    if (!formLocation) {
+      setPostMessage("Please select a field/location from the dropdown.");
+      return;
+    }
 
     try {
       const res = await fetch(`${API}/posts`, {
@@ -494,6 +528,64 @@ export default function OpenMatchDashboard() {
       console.error("Error deleting post");
     }
   }
+
+  async function searchFields(query: string) {
+    if (!query.trim()) {
+      setFieldResults([]);
+      setShowFieldDropdown(false);
+      return;
+    }
+
+    setFieldSearchLoading(true);
+
+    try {
+      const raw = query.trim();
+      const isZip = /^\d{5}$/.test(raw);
+      const looksLikeAddress = /\d/.test(raw) || raw.includes(",");
+
+      const locationParam = raw;
+      const termParam =
+        isZip || looksLikeAddress
+          ? "sports fields"
+          : "sports fields";
+
+      const res = await fetch(
+        `${API}/fields/search?location=${encodeURIComponent(locationParam)}&term=${encodeURIComponent(termParam)}&sort_by=distance`
+      );
+
+      if (res.ok) {
+        const data = await res.json();
+        setFieldResults((data.businesses || []).slice(0, 15));
+        setShowFieldDropdown(true);
+      } else {
+        setFieldResults([]);
+        setShowFieldDropdown(false);
+      }
+    } catch {
+      setFieldResults([]);
+      setShowFieldDropdown(false);
+    } finally {
+      setFieldSearchLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!showPostModal) return;
+
+    const q = locationQuery.trim();
+
+    if (!q) {
+      setFieldResults([]);
+      setShowFieldDropdown(false);
+      return;
+    }
+
+    const id = setTimeout(() => {
+      searchFields(q);
+    }, 300);
+
+    return () => clearTimeout(id);
+  }, [locationQuery, showPostModal]);
 
   const nearbyRequests = [
     { initials: "MR", name: "Marco R.", desc: "Casual 7v7 — Clark Park turf", tags: ["Soccer", "Casual", "7v7"], time: "5m", isTeam: false },
@@ -1209,15 +1301,86 @@ export default function OpenMatchDashboard() {
                   </select>
               </div>
 
-              <div>
-                <label className="form-label">Location</label>
+              <div style={{ position: "relative" }}>
+                <label className="form-label">Field / Meeting Location</label>
                 <input
                   type="text"
                   className="form-input"
-                  placeholder="e.g., FDR Park"
-                  value={formLocation}
-                  onChange={(e) => setFormLocation(e.target.value)}
+                  placeholder="Zip code or field name..."
+                  value={locationQuery}
+                  onChange={(e) => {
+                    setLocationQuery(e.target.value);
+                    setSelectedFieldId(null);
+                    setFormLocation("");
+                  }}
+                  onFocus={() => {
+                    if (fieldResults.length > 0) setShowFieldDropdown(true);
+                  }}
                 />
+
+                {fieldSearchLoading && (
+                  <p style={{ fontSize: 11, color: "#52525b", marginTop: 6 }}>
+                    Searching nearby fields...
+                  </p>
+                )}
+
+                {showFieldDropdown && fieldResults.length > 0 && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      right: 0,
+                      marginTop: 6,
+                      background: "#0f0f0f",
+                      border: "1px solid #1e1e1e",
+                      borderRadius: 10,
+                      overflow: "hidden",
+                      zIndex: 20,
+                      boxShadow: "0 12px 30px rgba(0,0,0,0.45)",
+                    }}
+                  >
+                    {fieldResults.map((field) => {
+                      const address = field.location.display_address.join(", ");
+                      const miles =
+                        field.distance != null ? `${(field.distance / 1609.34).toFixed(1)} mi` : "";
+
+                      return (
+                        <button
+                          key={field.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedFieldId(field.id);
+                            setFormLocation(`${field.name} — ${address}`);
+                            setLocationQuery(field.name);
+                            setShowFieldDropdown(false);
+                          }}
+                          style={{
+                            width: "100%",
+                            textAlign: "left",
+                            background: "transparent",
+                            border: "none",
+                            borderBottom: "1px solid #1a1a1a",
+                            padding: "10px 12px",
+                            cursor: "pointer",
+                            color: "#e4e4e7",
+                          }}
+                        >
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{field.name}</div>
+                          <div style={{ fontSize: 11, color: "#71717a", marginTop: 2 }}>
+                            {address}{miles ? ` · ${miles}` : ""}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {formLocation && (
+                  <p style={{ fontSize: 11, color: "#34d399", marginTop: 6 }}>
+                    Selected: {formLocation}
+                  </p>
+                )}
               </div>
 
               <div>
