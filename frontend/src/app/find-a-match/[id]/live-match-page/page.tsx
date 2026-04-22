@@ -302,6 +302,8 @@ export default function LiveMatchPage() {
   const myStartConfirmed = liveMatch?.start_confirmations.some((c) => c.user_id === userId) ?? false;
 
   const canEditScore = !!liveMatch && liveMatch.status === "in_progress";
+  const canEditSideAScore = canEditScore && myLiveSide === "B";
+  const canEditSideBScore = canEditScore && myLiveSide === "A";
   const canStart = !!liveMatch && liveMatch.status === "awaiting_start" && !!myLiveSide && !myStartConfirmed;
   const canEnd = !!liveMatch && liveMatch.status === "in_progress";
 
@@ -607,7 +609,7 @@ export default function LiveMatchPage() {
                 score={liveMatch.score_side_a}
                 onMinus={() => changeScore("A", -1)}
                 onPlus={() => changeScore("A", 1)}
-                disabled={!canEditScore || busy}
+                disabled={!canEditSideAScore || busy}
               />
 
               <div style={{ color: "#6b7280", fontWeight: 800, fontSize: 22 }}>VS</div>
@@ -617,7 +619,7 @@ export default function LiveMatchPage() {
                 score={liveMatch.score_side_b}
                 onMinus={() => changeScore("B", -1)}
                 onPlus={() => changeScore("B", 1)}
-                disabled={!canEditScore || busy}
+                disabled={!canEditSideBScore || busy}
               />
 
               <MatchTimer startedAt={liveMatch.started_at} endedAt={liveMatch.ended_at} />
