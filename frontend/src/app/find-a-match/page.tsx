@@ -238,6 +238,42 @@ export default function FindAMatchPage() {
       }
       setMessageByPost((m) => ({ ...m, [postId]: "Accepted! Open lobby to ready up when full." }));
     } catch { setMessageByPost((m) => ({ ...m, [postId]: "Backend not reachable." })); }
+    const postsRes = await fetch(`${API}/posts`);
+    if (postsRes.ok) {
+      const updatedPosts = await postsRes.json();
+      setPosts(updatedPosts);
+      await refreshLiveMatches(updatedPosts);
+    }
+  }
+
+  async function readyUp(postId: number) {
+    setMessageByPost((m) => ({ ...m, [postId]: "" }));
+
+    try {
+      const res = await fetch(`${API}/posts/${postId}/ready`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setMessageByPost((m) => ({
+          ...m,
+          [postId]: err.detail || "Failed to ready up.",
+        }));
+        return;
+      }
+
+      setMessageByPost((m) => ({
+        ...m,
+        [postId]: "Ready confirmed. Enter live match when it opens.",
+      }));
+    } catch {
+      setMessageByPost((m) => ({
+        ...m,
+        [postId]: "Backend not reachable.",
+      }));
+    }
   }
 
   return (
@@ -423,7 +459,6 @@ export default function FindAMatchPage() {
                       </Link>
 
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        {/* Live match button — shown instead of join when a live match exists */}
                         {liveMatch ? (
                           <button
                             className="live-btn"
@@ -431,31 +466,50 @@ export default function FindAMatchPage() {
                           >
                             Enter Live Match
                           </button>
+                        ) : status === "ready_pending" || status === "confirmed" ? (
+                          <button
+                            className="primary-btn"
+                            onClick={() => readyUp(p.id)}
+                          >
+                            Ready Up
+                          </button>
                         ) : isTeam ? (
-                          <>
-                            {(() => {
-                              const team = userTeams.find((t) => t.sport === p.sport_name);
-                              return (
-                                <button
-                                  className="primary-btn"
-                                  onClick={() => {
-                                    if (!team) {
-                                      setMessageByPost((m) => ({ ...m, [p.id]: "You don't have a team for this sport." }));
-                                      return;
-                                    }
-                                    joinTeamPost(p.id, team.id);
-                                  }}
-                                  disabled={status !== "open" || !team}
-                                  style={!team ? { background: "linear-gradient(135deg, #3f3f46, #52525b)", cursor: "not-allowed" } : {}}
-                                  title={!team ? "You don't have a team for this sport" : undefined}
-                                >
-                                  {team ? `Join as ${team.name}` : "No team for this sport"}
-                                </button>
-                              );
-                            })()}
-                          </>
+                          (() => {
+                            const team = userTeams.find((t) => t.sport === p.sport_name);
+                            return (
+                              <button
+                                className="primary-btn"
+                                onClick={() => {
+                                  if (!team) {
+                                    setMessageByPost((m) => ({
+                                      ...m,
+                                      [p.id]: "You don't have a team for this sport.",
+                                    }));
+                                    return;
+                                  }
+                                  joinTeamPost(p.id, team.id);
+                                }}
+                                disabled={status !== "open" || !team}
+                                style={
+                                  !team
+                                    ? {
+                                        background: "linear-gradient(135deg, #3f3f46, #52525b)",
+                                        cursor: "not-allowed",
+                                      }
+                                    : {}
+                                }
+                                title={!team ? "You don't have a team for this sport" : undefined}
+                              >
+                                {team ? `Join as ${team.name}` : "No team for this sport"}
+                              </button>
+                            );
+                          })()
                         ) : (
-                          <button className="primary-btn" onClick={() => acceptIndividual(p.id)} disabled={status !== "open"}>
+                          <button
+                            className="primary-btn"
+                            onClick={() => acceptIndividual(p.id)}
+                            disabled={status !== "open"}
+                          >
                             Accept
                           </button>
                         )}
