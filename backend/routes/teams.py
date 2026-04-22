@@ -8,7 +8,6 @@ from core.websocket import manager
 
 from core.config import FRONTEND_URL
 from core.teams import verify_user_has_sport_profile, is_captain
-from core.teams import verify_user_has_sport_profile
 from core.ranking import get_rank_from_mmr
 from schemas.teams import TeamMember, TeamStats, TeamProfile, Team, TeamCreateForm, joinTeam, editTeam, inviteUser
 
@@ -19,18 +18,16 @@ import hashlib
 
 router = APIRouter(tags=["teams"])
 
+
 @router.post("/teams")
 async def create_team(payload: TeamCreateForm, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
-        try: 
-            # define User Id
+        try:
             user_id = int(current_user["sub"])
-            
-            # Check if this user has a sports profile for the team being joined, prevent if true
+
             if not verify_user_has_sport_profile(conn, user_id, payload.sport_id):
                 raise HTTPException(status_code=403, detail="You must create sport profile for this team's sport")
 
-            # Define invite only
             invite_only = not payload.is_open
 
             row = conn.execute(
@@ -39,51 +36,67 @@ async def create_team(payload: TeamCreateForm, current_user: dict = Depends(get_
                     WITH inserted_team AS (
                         INSERT INTO teams (name, sport_id, city, invite_only)
                         VALUES (:name, :sport_id, :city, :invite_only)
-                        RETURNING id, name, sport_id, city, created_at
+                        RETURNING id, name, sport_id, city, invite_only, created_at
                     )
-                    SELECT it.id, it.name, it.city, it.sport_id, s.name AS sport
+                    SELECT it.id, it.name, it.city, it.sport_id, it.invite_only, s.name AS sport
                     FROM inserted_team it
                     JOIN sports s ON it.sport_id = s.id;
                     """
                 ),
-                {"name": payload.name, "sport_id": payload.sport_id, "city": payload.city, "invite_only": invite_only},
+                {
+                    "name": payload.name,
+                    "sport_id": payload.sport_id,
+                    "city": payload.city,
+                    "invite_only": invite_only,
+                },
             ).mappings().one()
+
             result = dict(row)
-
-            # Define Team and UserID
             team_id = result["id"]
-            user_id = int(current_user["sub"])
 
-            # Initialize team profile
             conn.execute(
-                text("""
+                text(
+                    """
                     INSERT INTO team_stats (team_id, team_mmr, matches_played, wins, losses, ties)
                     VALUES (:team_id, 1000, 0, 0, 0, 0)
-                """),
-                {"team_id": team_id}
+                    """
+                ),
+                {"team_id": team_id},
             )
 
-            # Create first user as captain
             conn.execute(
-                text("""
+                text(
+                    """
                     INSERT INTO team_members (user_id, team_id, sport_id, role)
                     SELECT :user_id, :team_id, sport_id, 'captain'
-                    FROM teams WHERE id = :team_id
-                """),
-                {"user_id": user_id, "team_id": team_id}
+                    FROM teams
+                    WHERE id = :team_id
+                    """
+                ),
+                {"user_id": user_id, "team_id": team_id},
             )
 
-            await manager.broadcast({"type": "team_created", "team_id": team_id})
-            
-            return {
-                "name": result["name"],
-                "id": result["id"],
-                "sport_id": result["sport_id"],
-                "city": result["city"],
-                "sport": result["sport"]
-            }
         except IntegrityError:
             raise HTTPException(status_code=400, detail="A team with this name and sport already exist")
+
+    await manager.broadcast({
+        "type": "team_created",
+        "teamId": team_id,
+    })
+    await manager.broadcast({
+        "type": "team_updated",
+        "teamId": team_id,
+    })
+
+    return {
+        "name": result["name"],
+        "id": result["id"],
+        "sport_id": result["sport_id"],
+        "city": result["city"],
+        "sport": result["sport"],
+        "invite_only": result["invite_only"],
+    }
+
 
 @router.get("/teams")
 def list_teams():
@@ -94,7 +107,7 @@ def list_teams():
                 SELECT t.id, t.name, t.sport_id, t.city, t.invite_only, s.name AS sport
                 FROM teams t
                 JOIN sports s ON t.sport_id = s.id
-                ORDER BY id DESC
+                ORDER BY t.id DESC
                 """
             )
         ).mappings().all()
@@ -105,115 +118,129 @@ def list_teams():
         teams.append({**row, "presence": pres})
     return teams
 
-# For updating the team name, under "edit_team"
+
 @router.patch("/teams/{team_id}")
 async def edit_team_name(team_id: int, payload: editTeam, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
         user_id = int(current_user["sub"])
 
-
         try:
-            # First, verify that this user's ID is the team captains ID
             user_is_captain = conn.execute(
                 text(
                     """
                     SELECT EXISTS (
                         SELECT 1
                         FROM team_members
-                        WHERE team_id = :team_id AND user_id = :user_id
-                        AND role = 'captain'
+                        WHERE team_id = :team_id
+                          AND user_id = :user_id
+                          AND role = 'captain'
                     ) as user_is_captain
                     """
                 ),
-                { 
+                {
                     "team_id": team_id,
-                    "user_id": user_id
-                }
+                    "user_id": user_id,
+                },
             ).mappings().first().user_is_captain
 
             if not user_is_captain:
                 raise HTTPException(status_code=403, detail="User does not have permissions to edit this team!")
-            
-            conn.execute(
+
+            updated = conn.execute(
                 text(
                     """
                     UPDATE teams
-                    SET name = :name, invite_only = :invite_only WHERE id = :team_id
+                    SET name = :name,
+                        invite_only = :invite_only
+                    WHERE id = :team_id
+                    RETURNING id
                     """
                 ),
                 {
                     "team_id": team_id,
                     "name": payload.name,
                     "invite_only": payload.invite_only,
-                }
-            )
+                },
+            ).mappings().first()
 
-            return {"ok": True}
+            if not updated:
+                raise HTTPException(status_code=404, detail="Team not found")
 
         except IntegrityError:
             raise HTTPException(status_code=400, detail="Error encountered. Does another team with this name and sport exist?")
-        
-# DANGER ZONE - DELETING A TEAM
+
+    await manager.broadcast({
+        "type": "team_updated",
+        "teamId": team_id,
+    })
+
+    return {"ok": True}
+
+
 @router.delete("/teams/{team_id}")
 async def delete_team(team_id: int, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
         user_id = int(current_user["sub"])
 
         try:
-            # First, verify that this user's ID is the team captains ID
             user_is_captain = conn.execute(
                 text(
                     """
                     SELECT EXISTS (
                         SELECT 1
                         FROM team_members
-                        WHERE team_id = :team_id AND user_id = :user_id
-                        AND role = 'captain'
+                        WHERE team_id = :team_id
+                          AND user_id = :user_id
+                          AND role = 'captain'
                     ) as user_is_captain
                     """
                 ),
-                { 
+                {
                     "team_id": team_id,
-                    "user_id": user_id
-                }
+                    "user_id": user_id,
+                },
             ).mappings().first().user_is_captain
 
             if not user_is_captain:
                 raise HTTPException(status_code=403, detail="User does not have permissions to delete this team!")
-            
-            # Update team name accordingly
+
             conn.execute(
                 text(
                     """
                     DELETE FROM teams
-                    WHERE id= :team_id
+                    WHERE id = :team_id
                     """
                 ),
-                {
-                    "team_id": team_id
-                }
+                {"team_id": team_id},
             )
-
-            return {"ok": True}
 
         except IntegrityError:
             raise HTTPException(status_code=400, detail="Error encountered with deleting team.")
+
+    await manager.broadcast({
+        "type": "team_deleted",
+        "teamId": team_id,
+    })
+    await manager.broadcast({
+        "type": "team_updated",
+        "teamId": team_id,
+    })
+
+    return {"ok": True}
+
 
 @router.post("/teams/{team_id}/join")
 async def join_team(team_id: int, payload: joinTeam, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
         try:
-            # Define User Id
             user_id = int(current_user["sub"])
-            
-            # Check if this user has a sports profile for the team being joined, prevent if true
+
             if not verify_user_has_sport_profile(conn, user_id, payload.sport_id):
                 raise HTTPException(status_code=403, detail="You must create sport profile for this team's sport")
 
-            # Does the team exist, and can it be joined?
             team = conn.execute(
                 text("SELECT invite_only FROM teams WHERE id = :team_id"),
-                {"team_id": team_id}
+                {"team_id": team_id},
             ).mappings().first()
 
             if not team:
@@ -235,38 +262,49 @@ async def join_team(team_id: int, payload: joinTeam, current_user: dict = Depend
                 {
                     "user_id": user_id,
                     "team_id": team_id,
-                    "role": payload.role
+                    "role": payload.role,
                 },
             ).mappings().one()
 
-            return row
         except IntegrityError as e:
             err = str(e.orig) if e.orig else ""
             if "team_members_user_id_sport_id_key" in err:
                 raise HTTPException(status_code=409, detail="You are already on a team for this sport. Leave your current team first.")
             raise HTTPException(status_code=409, detail="You are already a member of this team")
-        
+
+    await manager.broadcast({
+        "type": "team_member_joined",
+        "teamId": team_id,
+        "userId": user_id,
+    })
+    await manager.broadcast({
+        "type": "team_updated",
+        "teamId": team_id,
+    })
+
+    return row
+
+
 @router.post("/teams/{team_id}/leave")
 async def leave_team(team_id: int, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
-        user_id = int(current_user["sub"]);
+        user_id = int(current_user["sub"])
 
-        # If the user is the captain, will need to pass on ownership. Defaults to the most senior team member
         captain_is_leaving = is_captain(conn, user_id, team_id)
 
         senior_player = conn.execute(
             text(
                 """
-                SELECT user_id FROM team_members
+                SELECT user_id
+                FROM team_members
                 WHERE team_id = :team_id
-                AND user_id <> :captain_id
+                  AND user_id <> :captain_id
                 ORDER BY joined_at ASC
                 LIMIT 1
                 """
             ),
-            { "captain_id": user_id, "team_id": team_id }
+            {"captain_id": user_id, "team_id": team_id},
         ).mappings().first()
-        
 
         if not senior_player:
             raise HTTPException(status_code=403, detail="Can't leave the team if you're the only member! Please delete instead.")
@@ -276,7 +314,8 @@ async def leave_team(team_id: int, current_user: dict = Depends(get_current_user
                 text(
                     """
                     DELETE FROM team_members
-                    WHERE (user_id = :user_id) AND (team_id = :team_id)
+                    WHERE user_id = :user_id
+                      AND team_id = :team_id
                     """
                 ),
                 {
@@ -287,23 +326,32 @@ async def leave_team(team_id: int, current_user: dict = Depends(get_current_user
 
             if row.rowcount == 0:
                 raise HTTPException(status_code=400, detail="User is not a member of this team")
-            
-            # If the captain has left, update the next users role to captain
-            if (captain_is_leaving):
+
+            if captain_is_leaving:
                 conn.execute(
                     text(
                         """
                         UPDATE team_members
-                        SET role='captain'
+                        SET role = 'captain'
                         WHERE user_id = :user_id
+                          AND team_id = :team_id
                         """
                     ),
-                    { "user_id": senior_player.user_id }
+                    {
+                        "user_id": senior_player.user_id,
+                        "team_id": team_id,
+                    },
                 )
 
-            return {"ok": True}
         except IntegrityError:
             raise HTTPException(status_code=400, detail="Unable to leave team. Please try again.")
+
+    await manager.broadcast({
+        "type": "team_updated",
+        "teamId": team_id,
+    })
+
+    return {"ok": True}
 
 
 @router.post("/teams/{team_id}/presence")
@@ -317,8 +365,18 @@ async def set_presence(team_id: int, payload: dict):
     if status == "Ready":
         r.expire(key, 30 * 60)
 
-    await manager.broadcast({"type": "presence_updated", "team_id": team_id, "status": status})
+    await manager.broadcast({
+        "type": "presence_updated",
+        "teamId": team_id,
+        "status": status,
+    })
+    await manager.broadcast({
+        "type": "team_updated",
+        "teamId": team_id,
+    })
+
     return {"ok": True}
+
 
 @router.get("/users/{user_id}/teams")
 def get_user_teams(user_id: int, current_user: dict = Depends(get_current_user)):
@@ -366,30 +424,34 @@ def get_user_teams(user_id: int, current_user: dict = Depends(get_current_user))
 
     return result
 
+
 @router.get("/teams/{team_id}/members")
 def list_team_members(team_id: int) -> list[TeamMember]:
     with engine.begin() as conn:
         team = conn.execute(
             text("SELECT id FROM teams WHERE id = :team_id"),
-            {"team_id": team_id}
+            {"team_id": team_id},
         ).first()
 
         if not team:
             raise HTTPException(status_code=404, detail="Team not found")
 
         rows = conn.execute(
-            text("""
+            text(
+                """
                 SELECT tm.id, tm.user_id, tm.role, tm.joined_at,
                        u.first_name || ' ' || u.last_name AS name
                 FROM team_members tm
                 JOIN users u ON u.id = tm.user_id
                 WHERE team_id = :team_id
                 ORDER BY tm.joined_at ASC
-            """),
-            {"team_id": team_id}
+                """
+            ),
+            {"team_id": team_id},
         ).mappings().all()
 
     return [TeamMember(**row) for row in rows]
+
 
 @router.get("/teams/{team_id}/stats")
 def get_team_stats(team_id: int) -> TeamStats:
@@ -402,13 +464,14 @@ def get_team_stats(team_id: int) -> TeamStats:
                 WHERE team_id = :team_id
                 """
             ),
-            {"team_id": team_id}
+            {"team_id": team_id},
         ).mappings().first()
 
     if not row:
         raise HTTPException(status_code=404, detail="Team stats not found")
 
     return TeamStats(**row)
+
 
 @router.get("/teams/{team_id}/profile")
 def get_team_profile(
@@ -476,7 +539,6 @@ def get_team_profile(
             {"team_id": team_id, "user_id": auth_user_id},
         ).mappings().first()
 
-
     rank = get_rank_from_mmr(team_row["team_mmr"])
 
     members = [
@@ -518,25 +580,23 @@ def get_team_profile(
         },
     }
 
-# Generate an invite link for the team and user
+
 @router.post("/teams/{team_id}/invite")
 async def invite_user(team_id: int, payload: inviteUser, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
         user_id = int(current_user["sub"])
 
-        # Verify requester is a member of the team
         requester = conn.execute(
             text("SELECT id FROM team_members WHERE team_id = :team_id AND user_id = :user_id"),
-            {"team_id": team_id, "user_id": user_id}
+            {"team_id": team_id, "user_id": user_id},
         ).first()
 
         if not requester:
             raise HTTPException(status_code=403, detail="You must be a team member to send invites")
 
-        # Look up the invitee by username, to make sure the user exists
         invitee = conn.execute(
             text("SELECT id FROM users WHERE username = :username"),
-            {"username": payload.username}
+            {"username": payload.username},
         ).mappings().first()
 
         if not invitee:
@@ -544,76 +604,71 @@ async def invite_user(team_id: int, payload: inviteUser, current_user: dict = De
 
         invitee_id = invitee["id"]
 
-        # Prevent inviting someone already on the team
         already_member = conn.execute(
             text("SELECT id FROM team_members WHERE team_id = :team_id AND user_id = :user_id"),
-            {"team_id": team_id, "user_id": invitee_id}
+            {"team_id": team_id, "user_id": invitee_id},
         ).first()
 
         if already_member:
             raise HTTPException(status_code=409, detail="User is already a member of this team")
 
-        # Generate invite token
         plaintext_token = secrets.token_urlsafe(32)
         hashed_token = hashlib.sha256(plaintext_token.encode()).hexdigest()
         invite_url = f"{FRONTEND_URL}/my-teams/invite?token={plaintext_token}"
 
-        # Insert invite record into team_invite
         conn.execute(
-            text("""
+            text(
+                """
                 INSERT INTO team_invite (user_id, team_id, token_hash)
                 VALUES (:user_id, :team_id, :token_hash)
-            """),
-            {"user_id": invitee_id, "team_id": team_id, "token_hash": hashed_token}
+                """
+            ),
+            {"user_id": invitee_id, "team_id": team_id, "token_hash": hashed_token},
         )
 
         return {"invite_url": invite_url}
 
-# the endpoint called when a user clicks on an invite link
+
 @router.post("/teams/invite")
 async def accept_invite(token: str, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
         user_id = int(current_user["sub"])
 
-        # Hash the incoming token to look it up
         hashed_token = hashlib.sha256(token.encode()).hexdigest()
 
-        # Look up the invite to make sure it exists
         invite = conn.execute(
             text("SELECT id, user_id, team_id FROM team_invite WHERE token_hash = :token_hash"),
-            {"token_hash": hashed_token}
+            {"token_hash": hashed_token},
         ).mappings().first()
 
         if not invite:
             raise HTTPException(status_code=404, detail="Invalid or expired invite link")
 
-        # Verify the logged-in user matches the invited user
         if invite["user_id"] != user_id:
             raise HTTPException(status_code=403, detail="This invite was not issued to you")
 
         team_id = invite["team_id"]
 
-        # Get the team's sport_id so we can insert into team_members
         team = conn.execute(
             text("SELECT sport_id FROM teams WHERE id = :team_id"),
-            {"team_id": team_id}
+            {"team_id": team_id},
         ).mappings().first()
 
         if not team:
             raise HTTPException(status_code=404, detail="Team no longer exists")
 
-        # Check if this user has a sports profile for the team being joined, prevent if true
-        if not verify_user_has_sport_profile(conn, user_id, team.sport_id):
+        if not verify_user_has_sport_profile(conn, user_id, team["sport_id"]):
             raise HTTPException(status_code=403, detail="You must create sport profile for this team's sport")
 
-        # If everything checks out, add that user to the team, default role to 'member'
         try:
             conn.execute(
-                text("""
+                text(
+                    """
                     INSERT INTO team_members (user_id, team_id, sport_id, role)
                     VALUES (:user_id, :team_id, :sport_id, 'member')
-                """),
-                {"user_id": user_id, "team_id": team_id, "sport_id": team["sport_id"]}
+                    """
+                ),
+                {"user_id": user_id, "team_id": team_id, "sport_id": team["sport_id"]},
             )
         except IntegrityError as e:
             err = str(e.orig) if e.orig else ""
@@ -621,11 +676,19 @@ async def accept_invite(token: str, current_user: dict = Depends(get_current_use
                 raise HTTPException(status_code=409, detail="You are already on a team for this sport")
             raise HTTPException(status_code=409, detail="You are already a member of this team")
 
-        # Delete the used invite token
         conn.execute(
             text("DELETE FROM team_invite WHERE id = :id"),
-            {"id": invite["id"]}
+            {"id": invite["id"]},
         )
 
-        # Return OK status and team id joined
-        return {"ok": True, "team_id": team_id}
+    await manager.broadcast({
+        "type": "team_member_joined",
+        "teamId": team_id,
+        "userId": user_id,
+    })
+    await manager.broadcast({
+        "type": "team_updated",
+        "teamId": team_id,
+    })
+
+    return {"ok": True, "team_id": team_id}
