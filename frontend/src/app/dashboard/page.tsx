@@ -8,6 +8,10 @@ import { useEffect, useState } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
+const WS_BASE =
+  process.env.NEXT_PUBLIC_WS_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/^http/, "ws");
+
 type Sport = {
   id: number;
   name: string;
@@ -191,6 +195,68 @@ export default function OpenMatchDashboard() {
       fetchMyTeams(currentUser.id);
       fetchMySports(currentUser.id)
     }
+  }, []);
+
+  useEffect(() => {
+    if (!WS_BASE) return;
+
+    const ws = new WebSocket(`${WS_BASE}/ws`);
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+
+      heartbeat = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send("ping");
+        }
+      }, 20000);
+    };
+
+    ws.onmessage = async (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        const currentUser = getUser();
+        if (!currentUser) return;
+
+        if (
+          msg.type === "post_updated" ||
+          msg.type === "live_match_updated" ||
+          msg.type === "match_started" ||
+          msg.type === "match_ended" ||
+          msg.type === "match_score_updated"
+        ) {
+          await fetchUserPosts(currentUser.id);
+          await fetchRecentMatches(currentUser.id);
+        }
+
+        if (
+          msg.type === "team_updated" ||
+          msg.type === "team_member_joined" ||
+          msg.type === "team_deleted" ||
+          msg.type === "team_created"
+        ) {
+          await fetchMyTeams(currentUser.id);
+          await fetchTeams();
+        }
+      } catch (err) {
+        console.error("Bad websocket message:", err);
+      }
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket disconnected");
+      if (heartbeat) clearInterval(heartbeat);
+    };
+
+    ws.onerror = (err) => {
+      console.error("WebSocket error:", err);
+    };
+
+    return () => {
+      if (heartbeat) clearInterval(heartbeat);
+      ws.close();
+    };
   }, []);
 
   async function fetchMySports(userId: number) {

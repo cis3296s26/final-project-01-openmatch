@@ -10,6 +10,10 @@ import { useEffect, useState } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
+const WS_BASE =
+  process.env.NEXT_PUBLIC_WS_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/^http/, "ws");
+
 type TeamMember = {
     id: number;
     user_id: number;
@@ -106,6 +110,63 @@ export default function TeamProfilePage() {
         fetchTeamMembers(teamId);
         // fetchTeamMatches(teamId);
     }, [teamId]);
+
+    useEffect(() => {
+      if (!WS_BASE || !teamId) return;
+
+      const ws = new WebSocket(`${WS_BASE}/ws`);
+      let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+      ws.onopen = () => {
+          console.log("WebSocket connected");
+
+          heartbeat = setInterval(() => {
+              if (ws.readyState === WebSocket.OPEN) {
+                  ws.send("ping");
+              }
+          }, 20000);
+      };
+
+      ws.onmessage = async (event) => {
+          try {
+              const msg = JSON.parse(event.data);
+
+              if (msg.teamId && msg.teamId !== Number(teamId)) return;
+
+              if (
+                  msg.type === "team_updated" ||
+                  msg.type === "team_member_joined" ||
+                  msg.type === "team_deleted" ||
+                  msg.type === "team_created"
+              ) {
+                  await fetchTeam(teamId);
+                  await fetchTeamMembers(teamId);
+                  // if you turn match history back on later:
+                  // await fetchTeamMatches(teamId);
+              }
+
+              if (msg.type === "team_deleted") {
+                  router.push("/my-teams");
+              }
+          } catch (err) {
+              console.error("Bad websocket message:", err);
+          }
+      };
+
+      ws.onclose = () => {
+          console.log("WebSocket disconnected");
+          if (heartbeat) clearInterval(heartbeat);
+      };
+
+      ws.onerror = (err) => {
+          console.error("WebSocket error:", err);
+      };
+
+      return () => {
+          if (heartbeat) clearInterval(heartbeat);
+          ws.close();
+      };
+    }, [teamId, router]);
 
     async function fetchTeam(id: string | undefined) {
         setLoading(true);

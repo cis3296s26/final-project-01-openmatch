@@ -8,6 +8,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
+const WS_BASE =
+  process.env.NEXT_PUBLIC_WS_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/^http/, "ws");
+
 const SPORT_COLORS: Record<string, string> = {
   "Soccer": "#4ade80",
   "Basketball": "#fb923c",
@@ -140,9 +144,58 @@ export default function MatchLobbyPage() {
   useEffect(() => {
     setLoading(true);
     refresh();
-    const t = setInterval(refresh, 3500);
-    return () => clearInterval(t);
   }, [refresh]);
+
+  useEffect(() => {
+    if (!WS_BASE || !postId) return;
+
+    const ws = new WebSocket(`${WS_BASE}/ws`);
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+
+      heartbeat = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send("ping");
+        }
+      }, 20000);
+    };
+
+    ws.onmessage = async (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+
+        if (msg.postId !== postId) return;
+
+        if (
+          msg.type === "post_updated" ||
+          msg.type === "live_match_updated" ||
+          msg.type === "match_started" ||
+          msg.type === "match_ended" ||
+          msg.type === "match_score_updated"
+        ) {
+          await refresh();
+        }
+      } catch (err) {
+        console.error("Bad websocket message:", err);
+      }
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket disconnected");
+      if (heartbeat) clearInterval(heartbeat);
+    };
+
+    ws.onerror = (err) => {
+      console.error("WebSocket error:", err);
+    };
+
+    return () => {
+      if (heartbeat) clearInterval(heartbeat);
+      ws.close();
+    };
+  }, [postId, refresh]);
 
   const canEnterLiveMatch =
     !!liveMatch &&
