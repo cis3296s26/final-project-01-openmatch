@@ -5,6 +5,7 @@ from core.database import engine
 from core.security import get_current_user
 from core.mmr import apply_individual_competitive_mmr, apply_team_competitive_mmr
 from core.match_history import archive_completed_match
+from core.websocket import manager
 
 from schemas.matches import (
     MatchFinalizeOut,
@@ -170,28 +171,6 @@ def _apply_match_completion(conn, match, winner_side: str):
         },
     )
 
-    conn.execute(
-        text(
-            """
-            UPDATE live_matches
-            SET
-                winner_side = :winner_side,
-                winner_team_id = :winner_team_id,
-                status = 'completed',
-                ended_at = NOW(),
-                result_method = 'scoreboard',
-                rating_processed = TRUE,
-                updated_at = NOW()
-            WHERE id = :id
-            """
-        ),
-        {
-            "id": match["id"],
-            "winner_side": winner_side,
-            "winner_team_id": winner_team_id,
-        },
-    )
-
     archive_completed_match(conn, match["id"])
 
     conn.execute(
@@ -234,11 +213,13 @@ def get_live_match_by_post(post_id: int, current_user: dict = Depends(get_curren
 
 
 @router.post("/matches/{match_id}/start", response_model=MatchStartConfirmationOut)
-def start_match(match_id: int, current_user: dict = Depends(get_current_user)):
+async def start_match(match_id: int, current_user: dict = Depends(get_current_user)):
     user_id = int(current_user["sub"])
+    post_id = None
 
     with engine.begin() as conn:
         match = _get_match_or_404(conn, match_id)
+        post_id = match["match_post_id"]
 
         if match["rating_processed"]:
             raise HTTPException(400, "Match already finalized")
@@ -297,25 +278,45 @@ def start_match(match_id: int, current_user: dict = Depends(get_current_user)):
                     WHERE id = :post_id
                     """
                 ),
-                {"post_id": match["match_post_id"]},
+                {"post_id": post_id},
             )
+
+    await manager.broadcast({
+        "type": "live_match_updated",
+        "postId": post_id,
+    })
+    await manager.broadcast({
+        "type": "match_started",
+        "postId": post_id,
+    })
+    await manager.broadcast({
+        "type": "post_updated",
+        "postId": post_id,
+    })
 
     return confirmation
 
 
 @router.post("/matches/{match_id}/score", response_model=MatchScoreOut)
-def update_score(match_id: int, payload: MatchScoreUpdate, current_user: dict = Depends(get_current_user)):
+async def update_score(match_id: int, payload: MatchScoreUpdate, current_user: dict = Depends(get_current_user)):
     user_id = int(current_user["sub"])
+    post_id = None
 
     with engine.begin() as conn:
         match = _get_match_or_404(conn, match_id)
-        _require_match_player(conn, match_id, user_id)
+        player = _require_match_player(conn, match_id, user_id)
+        post_id = match["match_post_id"]
 
         if match["rating_processed"]:
             raise HTTPException(400, "Match already finalized")
 
         if match["status"] != "in_progress":
             raise HTTPException(400, "Score can only be updated while match is in progress")
+
+        # Anti-cheat rule:
+        # You can only update the opposing side's score.
+        if player["side"] == payload.side:
+            raise HTTPException(403, "You can only update the opposing side's score.")
 
         if payload.side == "A":
             next_score = max(0, int(match["score_side_a"]) + payload.delta)
@@ -344,6 +345,15 @@ def update_score(match_id: int, payload: MatchScoreUpdate, current_user: dict = 
 
         updated = _get_match_or_404(conn, match_id)
 
+    await manager.broadcast({
+        "type": "match_score_updated",
+        "postId": post_id,
+    })
+    await manager.broadcast({
+        "type": "live_match_updated",
+        "postId": post_id,
+    })
+
     return {
         "match_id": updated["id"],
         "score_side_a": updated["score_side_a"],
@@ -353,12 +363,14 @@ def update_score(match_id: int, payload: MatchScoreUpdate, current_user: dict = 
 
 
 @router.post("/matches/{match_id}/end", response_model=MatchFinalizeOut)
-def end_match(match_id: int, current_user: dict = Depends(get_current_user)):
+async def end_match(match_id: int, current_user: dict = Depends(get_current_user)):
     user_id = int(current_user["sub"])
+    post_id = None
 
     with engine.begin() as conn:
         match = _get_match_or_404(conn, match_id)
         _require_match_player(conn, match_id, user_id)
+        post_id = match["match_post_id"]
 
         if match["rating_processed"]:
             raise HTTPException(400, "Match already finalized")
@@ -375,6 +387,19 @@ def end_match(match_id: int, current_user: dict = Depends(get_current_user)):
         winner_side = "A" if score_a > score_b else "B"
         _apply_match_completion(conn, match, winner_side)
 
+    await manager.broadcast({
+        "type": "match_ended",
+        "postId": post_id,
+    })
+    await manager.broadcast({
+        "type": "live_match_updated",
+        "postId": post_id,
+    })
+    await manager.broadcast({
+        "type": "post_updated",
+        "postId": post_id,
+    })
+
     return {
         "match_id": match_id,
         "winner_side": winner_side,
@@ -383,11 +408,13 @@ def end_match(match_id: int, current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/matches/{match_id}/report-result", response_model=MatchResultReportOut)
-def report_result(match_id: int, payload: MatchResultReportCreate, current_user: dict = Depends(get_current_user)):
+async def report_result(match_id: int, payload: MatchResultReportCreate, current_user: dict = Depends(get_current_user)):
     user_id = int(current_user["sub"])
+    post_id = None
 
     with engine.begin() as conn:
         match = _get_match_or_404(conn, match_id)
+        post_id = match["match_post_id"]
 
         if match["rating_processed"]:
             raise HTTPException(400, "Match already finalized")
@@ -446,16 +473,23 @@ def report_result(match_id: int, payload: MatchResultReportCreate, current_user:
             {"mid": match_id, "side": side},
         ).mappings().first()
 
+    await manager.broadcast({
+        "type": "live_match_updated",
+        "postId": post_id,
+    })
+
     return report
 
 
 @router.post("/matches/{match_id}/finalize", response_model=MatchFinalizeOut)
-def finalize_match(match_id: int, current_user: dict = Depends(get_current_user)):
+async def finalize_match(match_id: int, current_user: dict = Depends(get_current_user)):
     user_id = int(current_user["sub"])
+    post_id = None
 
     with engine.begin() as conn:
         match = _get_match_or_404(conn, match_id)
         _require_match_player(conn, match_id, user_id)
+        post_id = match["match_post_id"]
 
         if match["rating_processed"]:
             raise HTTPException(400, "Match already finalized")
@@ -478,10 +512,27 @@ def finalize_match(match_id: int, current_user: dict = Depends(get_current_user)
                 text("UPDATE live_matches SET status = 'disputed', updated_at = NOW() WHERE id = :id"),
                 {"id": match_id},
             )
+            await manager.broadcast({
+                "type": "live_match_updated",
+                "postId": post_id,
+            })
             raise HTTPException(409, "Result disputed")
 
         winner_side = winner_sides.pop()
         _apply_match_completion(conn, match, winner_side)
+
+    await manager.broadcast({
+        "type": "match_ended",
+        "postId": post_id,
+    })
+    await manager.broadcast({
+        "type": "live_match_updated",
+        "postId": post_id,
+    })
+    await manager.broadcast({
+        "type": "post_updated",
+        "postId": post_id,
+    })
 
     return {
         "match_id": match_id,
