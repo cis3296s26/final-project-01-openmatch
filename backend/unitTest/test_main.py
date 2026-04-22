@@ -1,9 +1,11 @@
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
 
-from main import app, create_access_token, pwd_context
+from main import app
+from core.security import create_access_token, pwd_context
 
 from datetime import datetime, timedelta, timezone
+import hashlib
 
 
 client = TestClient(app)
@@ -126,7 +128,7 @@ def test_create_profile(mock_engine):
 
 @patch("main.engine")
 def test_login(mock_engine):
-    from main import pwd_context
+    from core.security import pwd_context
 
     fake_row = {
         "id": 1,
@@ -161,7 +163,7 @@ def test_login(mock_engine):
 
 @patch("main.engine")
 def test_login_invalid_password(mock_engine):
-    from main import pwd_context
+    from core.security import pwd_context
 
     fake_row = {
         "id": 1,
@@ -206,7 +208,7 @@ def test_login_user_not_found(mock_engine):
 
 @patch("main.engine")
 def test_login_email_not_verified(mock_engine):
-    from main import pwd_context
+    from core.security import pwd_context
 
     fake_row = {
         "id": 1,
@@ -237,7 +239,7 @@ def test_login_email_not_verified(mock_engine):
 # Test verification endpoint sends correctly for found user
 @patch("main.engine")
 def test_resending_endpoint(mock_engine):
-    from main import pwd_context
+    from core.security import pwd_context
 
     fake_row = {
         "id": 1,
@@ -377,8 +379,6 @@ def test_get_user_profile_not_found(mock_engine):
 
 @patch("main.engine")
 def test_verification_returns_good(mock_engine):
-    from main import hashlib
-    from main import datetime, timedelta, timezone
 
     fake_row = {
         "id": 10,
@@ -405,8 +405,6 @@ def test_verification_token_not_found(mock_engine):
 
 @patch("main.engine")
 def test_verification_token_already_used(mock_engine):
-    from main import hashlib
-    from main import datetime, timedelta, timezone
 
     fake_row = {
         "id": 10,
@@ -424,8 +422,6 @@ def test_verification_token_already_used(mock_engine):
 
 @patch("main.engine")
 def test_verification_token_expired(mock_engine):
-    from main import hashlib
-    from main import datetime, timedelta, timezone
 
     fake_row = {
         "id": 10,
