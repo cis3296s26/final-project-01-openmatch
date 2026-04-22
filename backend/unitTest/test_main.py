@@ -1,9 +1,15 @@
-from fastapi.testclient import TestClient
-from unittest.mock import MagicMock, patch
-
-from main import app, create_access_token, pwd_context
-
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+# prevent real DB init during main import
+with patch("db.init_db.init_db", return_value=None):
+    from main import app
+
+from fastapi.testclient import TestClient
+from core.security import create_access_token, pwd_context
 
 
 client = TestClient(app)
@@ -40,16 +46,28 @@ class _FakeMappings:
 
 class _FakeResult:
     def __init__(self, *, first=None, one=None, all=None):
+        self._first = first
+        self._one = one
+        self._all = all if all is not None else []
         self._mappings = _FakeMappings(first=first, one=one, all=all)
 
     def mappings(self):
         return self._mappings
 
+    def first(self):
+        return self._first
 
-# ==== TESTS FOR POST ENDPOINTS ====
+    def one(self):
+        return self._one
 
-@patch("main.engine")
-def test_create_user(mock_engine):
+    def all(self):
+        return self._all
+
+
+@pytest.mark.users
+@patch("routes.users.create_and_send_verification_email", new_callable=AsyncMock)
+@patch("routes.users.engine")
+def test_create_user(mock_engine, mock_send_email):
     fake_row = {
         "id": 101,
         "first_name": "Test",
@@ -74,7 +92,6 @@ def test_create_user(mock_engine):
     )
 
     assert response.status_code == 201
-
     data = response.json()
     assert data["id"] == 101
     assert data["first_name"] == "Test"
@@ -82,9 +99,11 @@ def test_create_user(mock_engine):
     assert data["email"] == "testuser@example.com"
     assert data["username"] == "testuser"
     assert "created_at" in data
+    mock_send_email.assert_awaited_once()
 
 
-@patch("main.engine")
+@pytest.mark.profiles
+@patch("routes.profiles.engine")
 def test_create_profile(mock_engine):
     fake_row = {
         "id": 201,
@@ -114,7 +133,6 @@ def test_create_profile(mock_engine):
     )
 
     assert response.status_code == 201
-
     data = response.json()
     assert data["id"] == 201
     assert data["user_id"] == 1
@@ -124,10 +142,10 @@ def test_create_profile(mock_engine):
     assert "created_at" in data
     assert "updated_at" in data
 
-@patch("main.engine")
-def test_login(mock_engine):
-    from main import pwd_context
 
+@pytest.mark.auth
+@patch("routes.auth.engine")
+def test_login(mock_engine):
     fake_row = {
         "id": 1,
         "first_name": "Test",
@@ -136,6 +154,7 @@ def test_login(mock_engine):
         "username": "testuser",
         "password_hash": pwd_context.hash("testpassword"),
         "email_verified": True,
+        "display_name": "TestUser",
     }
 
     fake_engine = _mock_begin_with_row(fake_row, method="first")
@@ -150,19 +169,18 @@ def test_login(mock_engine):
     )
 
     assert response.status_code == 200
-
     data = response.json()
     assert "access_token" in data
     assert data["token_type"] == "bearer"
     assert data["user"]["id"] == 1
     assert data["user"]["email"] == "testuser@example.com"
     assert data["user"]["username"] == "testuser"
+    assert data["user"]["display_name"] == "TestUser"
 
 
-@patch("main.engine")
+@pytest.mark.auth
+@patch("routes.auth.engine")
 def test_login_invalid_password(mock_engine):
-    from main import pwd_context
-
     fake_row = {
         "id": 1,
         "first_name": "Test",
@@ -171,6 +189,7 @@ def test_login_invalid_password(mock_engine):
         "username": "testuser",
         "password_hash": pwd_context.hash("correctpassword"),
         "email_verified": True,
+        "display_name": "TestUser",
     }
 
     fake_engine = _mock_begin_with_row(fake_row, method="first")
@@ -187,7 +206,9 @@ def test_login_invalid_password(mock_engine):
     assert response.status_code == 401
     assert response.json() == {"detail": "Invalid credentials"}
 
-@patch("main.engine")
+
+@pytest.mark.auth
+@patch("routes.auth.engine")
 def test_login_user_not_found(mock_engine):
     fake_engine = _mock_begin_with_row(None, method="first")
     mock_engine.begin = fake_engine.begin
@@ -204,10 +225,9 @@ def test_login_user_not_found(mock_engine):
     assert response.json() == {"detail": "Invalid credentials"}
 
 
-@patch("main.engine")
+@pytest.mark.auth
+@patch("routes.auth.engine")
 def test_login_email_not_verified(mock_engine):
-    from main import pwd_context
-
     fake_row = {
         "id": 1,
         "first_name": "Test",
@@ -216,6 +236,7 @@ def test_login_email_not_verified(mock_engine):
         "username": "testuser",
         "password_hash": pwd_context.hash("testpassword"),
         "email_verified": False,
+        "display_name": "TestUser",
     }
 
     fake_engine = _mock_begin_with_row(fake_row, method="first")
@@ -234,11 +255,11 @@ def test_login_email_not_verified(mock_engine):
         "detail": "Please verify your email before signing in",
     }
 
-# Test verification endpoint sends correctly for found user
-@patch("main.engine")
-def test_resending_endpoint(mock_engine):
-    from main import pwd_context
 
+@pytest.mark.auth
+@patch("routes.auth.create_and_send_verification_email", new_callable=AsyncMock)
+@patch("routes.auth.engine")
+def test_resending_endpoint(mock_engine, mock_send_email):
     fake_row = {
         "id": 1,
         "first_name": "Test",
@@ -247,6 +268,7 @@ def test_resending_endpoint(mock_engine):
         "username": "testuser",
         "password_hash": pwd_context.hash("testpassword"),
         "email_verified": False,
+        "display_name": "TestUser",
     }
 
     fake_engine = _mock_begin_with_row(fake_row, method="first")
@@ -254,17 +276,18 @@ def test_resending_endpoint(mock_engine):
 
     response = client.post(
         "/resendVerification",
-        json = {
+        json={
             "login": "testuser",
-            "password": "testpassword"
-        }
+            "password": "testpassword",
+        },
     )
 
     assert response.status_code == 200
+    mock_send_email.assert_awaited_once()
 
-# ==== TESTS FOR GET ENDPOINTS ====
 
-@patch("main.engine")
+@pytest.mark.users
+@patch("routes.users.engine")
 def test_get_user(mock_engine):
     fake_row = {
         "id": 1,
@@ -290,7 +313,8 @@ def test_get_user(mock_engine):
     assert "created_at" in data
 
 
-@patch("main.engine")
+@pytest.mark.users
+@patch("routes.users.engine")
 def test_get_user_not_found(mock_engine):
     fake_engine = _mock_begin_with_row(None, method="first")
     mock_engine.begin = fake_engine.begin
@@ -300,7 +324,8 @@ def test_get_user_not_found(mock_engine):
     assert response.json() == {"detail": "User not found"}
 
 
-@patch("main.engine")
+@pytest.mark.profiles
+@patch("routes.profiles.engine")
 def test_get_profile(mock_engine):
     fake_row = {
         "id": 1,
@@ -328,7 +353,8 @@ def test_get_profile(mock_engine):
     assert "updated_at" in data
 
 
-@patch("main.engine")
+@pytest.mark.profiles
+@patch("routes.profiles.engine")
 def test_get_profile_not_found(mock_engine):
     fake_engine = _mock_begin_with_row(None, method="first")
     mock_engine.begin = fake_engine.begin
@@ -338,7 +364,8 @@ def test_get_profile_not_found(mock_engine):
     assert response.json() == {"detail": "Profile not found"}
 
 
-@patch("main.engine")
+@pytest.mark.profiles
+@patch("routes.profiles.engine")
 def test_get_user_profile(mock_engine):
     fake_row = {
         "id": 10,
@@ -366,7 +393,8 @@ def test_get_user_profile(mock_engine):
     assert "updated_at" in data
 
 
-@patch("main.engine")
+@pytest.mark.profiles
+@patch("routes.profiles.engine")
 def test_get_user_profile_not_found(mock_engine):
     fake_engine = _mock_begin_with_row(None, method="first")
     mock_engine.begin = fake_engine.begin
@@ -375,17 +403,16 @@ def test_get_user_profile_not_found(mock_engine):
     assert response.status_code == 404
     assert response.json() == {"detail": "Profile not found"}
 
-@patch("main.engine")
-def test_verification_returns_good(mock_engine):
-    from main import hashlib
-    from main import datetime, timedelta, timezone
 
+@pytest.mark.auth
+@patch("routes.auth.engine")
+def test_verification_returns_good(mock_engine):
     fake_row = {
         "id": 10,
         "user_id": 1,
         "expires_at": datetime.now(timezone.utc) + timedelta(hours=24),
         "used_at": None,
-        "token_hash": hashlib.sha256("12345678".encode()).hexdigest()
+        "token_hash": sha256("12345678".encode()).hexdigest(),
     }
 
     fake_engine = _mock_begin_with_row(fake_row, method="first")
@@ -394,26 +421,26 @@ def test_verification_returns_good(mock_engine):
     response = client.get("/verify?token=12345678")
     assert response.status_code == 200
 
-@patch("main.engine")
-def test_verification_token_not_found(mock_engine):
 
+@pytest.mark.auth
+@patch("routes.auth.engine")
+def test_verification_token_not_found(mock_engine):
     fake_engine = _mock_begin_with_row(None, method="first")
     mock_engine.begin = fake_engine.begin
 
     response = client.get("/verify?token=12345678")
     assert response.status_code == 400
 
-@patch("main.engine")
-def test_verification_token_already_used(mock_engine):
-    from main import hashlib
-    from main import datetime, timedelta, timezone
 
+@pytest.mark.auth
+@patch("routes.auth.engine")
+def test_verification_token_already_used(mock_engine):
     fake_row = {
         "id": 10,
         "user_id": 1,
         "expires_at": datetime.now(timezone.utc) + timedelta(hours=24),
         "used_at": datetime.now(timezone.utc),
-        "token_hash": hashlib.sha256("12345678".encode()).hexdigest()
+        "token_hash": sha256("12345678".encode()).hexdigest(),
     }
 
     fake_engine = _mock_begin_with_row(fake_row, method="first")
@@ -422,17 +449,16 @@ def test_verification_token_already_used(mock_engine):
     response = client.get("/verify?token=12345678")
     assert response.status_code == 410
 
-@patch("main.engine")
-def test_verification_token_expired(mock_engine):
-    from main import hashlib
-    from main import datetime, timedelta, timezone
 
+@pytest.mark.auth
+@patch("routes.auth.engine")
+def test_verification_token_expired(mock_engine):
     fake_row = {
         "id": 10,
         "user_id": 1,
         "expires_at": datetime.now(timezone.utc) - timedelta(hours=24),
         "used_at": None,
-        "token_hash": hashlib.sha256("12345678".encode()).hexdigest()
+        "token_hash": sha256("12345678".encode()).hexdigest(),
     }
 
     fake_engine = _mock_begin_with_row(fake_row, method="first")
@@ -442,9 +468,9 @@ def test_verification_token_expired(mock_engine):
     assert response.status_code == 401
 
 
-@patch("main.engine")
+@pytest.mark.matches
+@patch("routes.matches.engine")
 def test_accept_individual_no_auto_ready(mock_engine):
-    """Individual accept should insert participant with ready=false (fill-then-timer model)."""
     token = create_access_token({"sub": "7", "email": "a@b.com", "username": "u"})
     future = datetime.now(timezone.utc) + timedelta(hours=1)
 
@@ -452,37 +478,46 @@ def test_accept_individual_no_auto_ready(mock_engine):
     mock_engine.begin.return_value.__enter__.return_value = mock_conn
     mock_engine.begin.return_value.__exit__.return_value = None
 
-    # Call sequence for /posts/{id}/accept-individual (fill-then-timer):
-    # 1) select post
-    # 2) side counts
-    # 3) insert participant
-    # 4) fill-check side counts
     mock_conn.execute.side_effect = [
         _FakeResult(first={
-            "id": 123, "user_id": 55, "team_id": None, "sport_id": 1,
-            "status": "open", "players_per_side": 2,
-            "locked_by_user_id": None, "locked_at": None,
-            "ready_deadline_at": None, "expires_at": future
+            "id": 123,
+            "user_id": 55,
+            "team_id": None,
+            "sport_id": 1,
+            "status": "open",
+            "players_per_side": 2,
+            "locked_by_user_id": None,
+            "locked_at": None,
+            "ready_deadline_at": None,
+            "expires_at": future,
         }),
         _FakeResult(all=[]),
         _FakeResult(first={
-            "id": 1, "match_post_id": 123, "user_id": 7, "side": "A",
-            "team_id": None, "selected_for_match": True, "ready": False,
+            "id": 1,
+            "match_post_id": 123,
+            "user_id": 7,
+            "side": "A",
+            "team_id": None,
+            "selected_for_match": True,
+            "ready": False,
             "joined_at": datetime.now(timezone.utc),
         }),
         _FakeResult(all=[{"side": "A", "c": 1}]),
     ]
 
-    res = client.post("/posts/123/accept-individual", headers={"Authorization": f"Bearer {token}"})
+    res = client.post(
+        "/posts/123/accept-individual",
+        headers={"Authorization": f"Bearer {token}"},
+    )
     assert res.status_code == 200
     data = res.json()
     assert data["user_id"] == 7
     assert data["ready"] is False
 
 
-@patch("main.engine")
+@pytest.mark.matches
+@patch("routes.matches.engine")
 def test_team_join_happy_path(mock_engine):
-    """Team member can join a team post while status is open."""
     token = create_access_token({"sub": "1", "email": "a@b.com", "username": "u"})
     future = datetime.now(timezone.utc) + timedelta(hours=1)
 
@@ -490,42 +525,54 @@ def test_team_join_happy_path(mock_engine):
     mock_engine.begin.return_value.__enter__.return_value = mock_conn
     mock_engine.begin.return_value.__exit__.return_value = None
 
-    # Call sequence for /posts/{id}/join (team, poster side):
-    # 1) select post
-    # 2) get_users_team_for_sport (if no team_id in payload)
-    # 3) team membership check
-    # 4) side count
-    # 5) insert participant
-    # 6) re-read post
-    # 7) fill-check side counts
     mock_conn.execute.side_effect = [
         _FakeResult(first={
-            "id": 50, "team_id": 10, "sport_id": 1, "status": "open",
-            "players_per_side": 3, "locked_by_team_id": None,
-            "ready_deadline_at": None, "expires_at": future
+            "id": 50,
+            "team_id": 10,
+            "sport_id": 1,
+            "status": "open",
+            "players_per_side": 3,
+            "locked_by_team_id": None,
+            "ready_deadline_at": None,
+            "expires_at": future,
         }),
         _FakeResult(first={"team_id": 10}),
-        _FakeResult(first=(1,)),
+        _FakeResult(first={"exists": 1}),
         _FakeResult(one={"c": 0}),
         _FakeResult(one={
-            "id": 1, "match_post_id": 50, "user_id": 1, "side": "poster",
-            "team_id": 10, "selected_for_match": True, "ready": False,
+            "id": 1,
+            "match_post_id": 50,
+            "user_id": 1,
+            "side": "B",
+            "team_id": 10,
+            "selected_for_match": True,
+            "ready": False,
             "joined_at": datetime.now(timezone.utc),
         }),
-        _FakeResult(one={"id": 50, "team_id": 10, "players_per_side": 3, "status": "open", "locked_by_team_id": None}),
-        _FakeResult(all=[{"side": "poster", "c": 1}]),
+        _FakeResult(one={
+            "id": 50,
+            "team_id": 10,
+            "players_per_side": 3,
+            "status": "open",
+            "locked_by_team_id": 10,
+        }),
+        _FakeResult(all=[{"side": "B", "c": 1}]),
     ]
 
-    res = client.post("/posts/50/join", headers={"Authorization": f"Bearer {token}"}, json={})
+    res = client.post(
+        "/posts/50/join",
+        headers={"Authorization": f"Bearer {token}"},
+        json={},
+    )
     assert res.status_code == 200
     data = res.json()
-    assert data["side"] == "poster"
+    assert data["team_id"] == 10
     assert data["ready"] is False
 
 
-@patch("main.engine")
+@pytest.mark.matches
+@patch("routes.matches.engine")
 def test_ready_rejected_before_ready_window(mock_engine):
-    """Ready should fail when status is still 'open' (ready window not started)."""
     token = create_access_token({"sub": "1", "email": "a@b.com", "username": "u"})
     future = datetime.now(timezone.utc) + timedelta(hours=1)
 
@@ -535,13 +582,15 @@ def test_ready_rejected_before_ready_window(mock_engine):
 
     mock_conn.execute.side_effect = [
         _FakeResult(first={
-            "id": 50, "team_id": 10, "status": "open",
-            "players_per_side": 5, "ready_deadline_at": None,
-            "expires_at": future
+            "id": 50,
+            "team_id": 10,
+            "status": "open",
+            "players_per_side": 5,
+            "ready_deadline_at": None,
+            "expires_at": future,
         }),
     ]
 
     res = client.post("/posts/50/ready", headers={"Authorization": f"Bearer {token}"})
     assert res.status_code == 409
     assert "not started" in res.json()["detail"].lower()
-
