@@ -8,6 +8,10 @@ import { useEffect, useState } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
+const WS_BASE =
+  process.env.NEXT_PUBLIC_WS_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/^http/, "ws");
+
 // Team type: what information are we collecting from each team
 type Team = {
   id: number;
@@ -263,6 +267,57 @@ export default function MyTeamsPage() {
     const hue = (sportId * 137) % 360; // 137 is the golden angle — spreads colors evenly
     return `hsl(${hue}, 70%, 65%)`;
   }
+
+  useEffect(() => {
+    if (!WS_BASE) return;
+
+    const ws = new WebSocket(`${WS_BASE}/ws`);
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+
+      // needed because backend waits on receive_text()
+      heartbeat = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send("ping");
+        }
+      }, 20000);
+    };
+
+    ws.onmessage = async (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+
+        if (
+          msg.type === "team_updated" ||
+          msg.type === "team_member_joined" ||
+          msg.type === "team_deleted"
+        ) {
+          const currentUser = getUser();
+          if (currentUser) {
+            await fetchTeams(currentUser.id);
+          }
+        }
+      } catch (err) {
+        console.error("Bad websocket message:", err);
+      }
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket disconnected");
+      if (heartbeat) clearInterval(heartbeat);
+    };
+
+    ws.onerror = (err) => {
+      console.error("WebSocket error:", err);
+    };
+
+    return () => {
+      if (heartbeat) clearInterval(heartbeat);
+      ws.close();
+    };
+  }, []);
 
   // Main Component
   return (

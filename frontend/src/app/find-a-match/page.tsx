@@ -8,6 +8,10 @@ import AuthGate from "@/components/AuthGate";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
+const WS_BASE =
+  process.env.NEXT_PUBLIC_WS_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/^http/, "ws");
+
 const SPORT_COLORS: Record<string, string> = {
   "Soccer": "#4ade80",
   "Basketball": "#fb923c",
@@ -128,9 +132,78 @@ export default function FindAMatchPage() {
   useEffect(() => {
     if (posts.length === 0) return;
     refreshLiveMatches(posts);
-    const t = setInterval(() => refreshLiveMatches(posts), 4000);
-    return () => clearInterval(t);
   }, [posts, refreshLiveMatches]);
+
+  useEffect(() => {
+    if (!WS_BASE) return;
+
+    const ws = new WebSocket(`${WS_BASE}/ws`);
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+
+      // needed because backend waits on receive_text()
+      heartbeat = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send("ping");
+        }
+      }, 20000);
+    };
+
+    ws.onmessage = async (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+
+        if (
+          msg.type === "post_updated" ||
+          msg.type === "live_match_updated" ||
+          msg.type === "match_started" ||
+          msg.type === "match_ended"
+        ) {
+          const userId = getUser()?.id;
+          if (!userId) return;
+
+          const [postsRes, teamsRes, userTeamsRes] = await Promise.all([
+            fetch(`${API}/posts`),
+            fetch(`${API}/teams`),
+            fetch(`${API}/users/${userId}/teams`, { headers: authHeaders() })
+          ]);
+
+          let nextPosts: MatchPost[] = [];
+
+          if (postsRes.ok) {
+            nextPosts = await postsRes.json();
+            setPosts(nextPosts);
+          }
+          if (teamsRes.ok) setTeams(await teamsRes.json());
+          if (userTeamsRes.ok) setUserTeams(await userTeamsRes.json());
+
+          if (nextPosts.length > 0) {
+            await refreshLiveMatches(nextPosts);
+          } else {
+            setLiveMatchByPost({});
+          }
+        }
+      } catch (err) {
+        console.error("Bad websocket message:", err);
+      }
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket disconnected");
+      if (heartbeat) clearInterval(heartbeat);
+    };
+
+    ws.onerror = (err) => {
+      console.error("WebSocket error:", err);
+    };
+
+    return () => {
+      if (heartbeat) clearInterval(heartbeat);
+      ws.close();
+    };
+  }, [refreshLiveMatches]);
 
   async function joinTeamPost(postId: number, teamId?: number) {
     const resolvedTeamId = teamId ?? joinTeamByPost[postId];
